@@ -6,7 +6,6 @@ import { apiService } from '@/lib/api';
 import { PriceObservation, Store } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-type WeeklySpend = { week: string; amount: number };
 type Deal = { product: string; store: string; price: number; prevPrice: number; savings: number };
 type RecentScan = { id: string; storeName: string; date: string; total: number; status: 'verified' | 'processing' };
 type DateWiseTransaction = { date: string; transactions: number; expenses: number; savings: number };
@@ -64,15 +63,29 @@ const toDateTimestamp = (value: string | undefined): number => {
   }
 };
 
+const isReceiptHistoryEntry = (entry: unknown): entry is ReceiptHistoryEntry => {
+  if (typeof entry !== 'object' || entry === null) return false;
+  const candidate = entry as Record<string, unknown>;
+  return (
+    typeof candidate.userKey === 'string' &&
+    typeof candidate.storeName === 'string' &&
+    typeof candidate.date === 'string' &&
+    typeof candidate.total === 'number' &&
+    (candidate.status === 'verified' || candidate.status === 'processing')
+  );
+};
+
 const getUserReceiptHistory = (userKey: string): ReceiptHistoryEntry[] => {
   try {
     const data = localStorage.getItem(RECEIPT_HISTORY_KEY);
     if (!data) return [];
     const parsed = JSON.parse(data);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (entry: any) => entry.userKey === userKey && entry.date && typeof entry.total === 'number'
-    );
+
+    return parsed.filter((entry): entry is ReceiptHistoryEntry => {
+      if (!isReceiptHistoryEntry(entry)) return false;
+      return entry.userKey === userKey;
+    });
   } catch {
     return [];
   }
@@ -145,18 +158,22 @@ const Dashboard = () => {
 
   const monthlySpend = useMemo(() => {
     const cutoff = Date.now() - ONE_MONTH_MS;
-    return Number(userReceipts
-      .filter((entry) => toDateTimestamp(entry.date) >= cutoff)
-      .reduce((sum, entry) => sum + entry.total, 0)
-      .toFixed(2));
+    return Number(
+      userReceipts
+        .filter((entry) => toDateTimestamp(entry.date) >= cutoff)
+        .reduce((sum, entry) => sum + entry.total, 0)
+        .toFixed(2)
+    );
   }, [userReceipts]);
 
   const totalSaved = useMemo(() => {
     const cutoff = Date.now() - ONE_MONTH_MS;
-    return Number(userReceipts
-      .filter((entry) => toDateTimestamp(entry.date) >= cutoff)
-      .reduce((sum, entry) => sum + (entry.savings || 0), 0)
-      .toFixed(2));
+    return Number(
+      userReceipts
+        .filter((entry) => toDateTimestamp(entry.date) >= cutoff)
+        .reduce((sum, entry) => sum + (entry.savings || 0), 0)
+        .toFixed(2)
+    );
   }, [userReceipts]);
 
   const monthlyTransactions = useMemo(() => {
@@ -216,26 +233,21 @@ const Dashboard = () => {
 
   return (
     <div className="page-container">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 pt-2">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">SmartCart</h1>
           <p className="text-sm text-muted-foreground">{locationLabel}</p>
         </div>
         <Header />
       </div>
-      <div className='items-center justify-center pt-2'>
-        <h1 className="text-2xl font-bold text-foreground">Welcome</h1>
-        <h3 className="text-sm text-muted-foreground">You need to upload/scan receipt atleast once in a month.</h3>
-      </div>
-      {/* Savings Card */}
-      {/* <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.1 }}
+
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
         className="ios-card mb-4 bg-gradient-to-br from-success/10 to-success/5 border border-success/20"
       >
-        <div className="flex items-center gap-3 mb-2">
+        <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-success/20 flex items-center justify-center">
             <TrendingDown size={20} className="text-success" />
           </div>
@@ -244,135 +256,152 @@ const Dashboard = () => {
             <p className="text-2xl font-bold text-success">${totalSaved.toFixed(2)}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <ArrowDownRight size={12} className="text-success" />
-          <span>Best-known basket spend · ${monthlySpend.toFixed(2)} total</span>
-        </div>
-      </motion.div> */}
-
-      {/* <div className="grid grid-cols-3 gap-2 mb-4">
-        <div className="ios-card py-3 px-3">
-          <p className="text-[10px] text-muted-foreground">1-Month Transactions</p>
-          <p className="text-base font-bold text-foreground">{monthlyTransactions}</p>
-        </div>
-        <div className="ios-card py-3 px-3">
-          <p className="text-[10px] text-muted-foreground">Total Expenses</p>
-          <p className="text-base font-bold text-foreground">${monthlySpend.toFixed(2)}</p>
-        </div>
-        <div className="ios-card py-3 px-3">
-          <p className="text-[10px] text-muted-foreground">Monthly Savings</p>
-          <p className="text-base font-bold text-success">${totalSaved.toFixed(2)}</p>
-        </div>
-      </div> */}
-
-      {/* <div className="ios-card mb-4">
-        <p className="section-title mb-2">Date-wise Transactions (Last 30 Days)</p>
-        {dateWiseTransactions.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No transactions available for the last 30 days.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-left">Date</TableHead>
-                <TableHead className="text-right">Transactions</TableHead>
-                <TableHead className="text-right">Expenses</TableHead>
-                <TableHead className="text-right">Savings</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {dateWiseTransactions.map((row) => (
-                <TableRow key={row.date}>
-                  <TableCell>{row.date}</TableCell>
-                  <TableCell className="text-right">{row.transactions}</TableCell>
-                  <TableCell className="text-right">${row.expenses.toFixed(2)}</TableCell>
-                  <TableCell className="text-right text-savings">${row.savings.toFixed(2)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div> */}
-
-      {/* Top Deals */}
-      {/* <div className="mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-1.5">
-            <Sparkles size={14} className="text-warning" />
-            <p className="section-title mb-0">Top Deals Near You</p>
+        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <ArrowDownRight size={12} className="text-success" />
+            <span>1-month spend: ${monthlySpend.toFixed(2)}</span>
           </div>
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              aria-label="Scroll deals left"
-              onClick={() => scrollTopDeals('left')}
-              className="h-7 w-7 rounded-full bg-secondary text-foreground flex items-center justify-center hover:bg-secondary/80 transition"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              type="button"
-              aria-label="Scroll deals right"
-              onClick={() => scrollTopDeals('right')}
-              className="h-7 w-7 rounded-full bg-secondary text-foreground flex items-center justify-center hover:bg-secondary/80 transition"
-            >
-              <ChevronRight size={14} />
-            </button>
+            <Sparkles size={12} className="text-warning" />
+            <span>{monthlyTransactions} transactions recorded</span>
           </div>
         </div>
-        <div ref={topDealsRef} className="flex gap-3 overflow-x-hidden pb-2 -mx-4 px-4">
-          {topDeals.map((deal, i) => (
-            <motion.div
-              key={deal.product}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 + i * 0.08 }}
-              className="ios-card min-w-[200px] flex-shrink-0"
-            >
-              <div className="savings-badge mb-2">-{deal.savings}%</div>
-              <p className="text-sm font-semibold text-foreground leading-tight mb-1">{deal.product}</p>
-              <p className="text-xs text-muted-foreground mb-2">{deal.store}</p>
-              <div className="flex items-baseline gap-2">
-                <span className="text-lg font-bold text-foreground">${deal.price}</span>
-                <span className="text-xs text-muted-foreground line-through">${deal.prevPrice}</span>
+      </motion.div>
+
+      <div className="grid gap-4 lg:grid-cols-3 mb-6">
+        <div className="ios-card p-4">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-[.3em]">Monthly Transactions</p>
+          <p className="text-3xl font-bold text-foreground">{monthlyTransactions}</p>
+        </div>
+        <div className="ios-card p-4">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-[.3em]">Expenses</p>
+          <p className="text-3xl font-bold text-foreground">${monthlySpend.toFixed(2)}</p>
+        </div>
+        <div className="ios-card p-4">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-[.3em]">Savings</p>
+          <p className="text-3xl font-bold text-success">${totalSaved.toFixed(2)}</p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
+        <div className="ios-card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Sparkles size={18} className="text-warning" />
+              <h2 className="text-lg font-semibold">Top Deals Near You</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Scroll deals left"
+                onClick={() => scrollTopDeals('left')}
+                className="h-8 w-8 rounded-full bg-secondary text-foreground flex items-center justify-center hover:bg-secondary/80 transition"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                aria-label="Scroll deals right"
+                onClick={() => scrollTopDeals('right')}
+                className="h-8 w-8 rounded-full bg-secondary text-foreground flex items-center justify-center hover:bg-secondary/80 transition"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+          {topDeals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No top deals available yet.</p>
+          ) : (
+            <div ref={topDealsRef} className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4">
+              {topDeals.map((deal) => (
+                <motion.div
+                  key={deal.product}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="ios-card min-w-[220px] flex-shrink-0 p-4"
+                >
+                  <div className="savings-badge mb-3">-{deal.savings}%</div>
+                  <p className="text-sm font-semibold text-foreground leading-tight mb-1">{deal.product}</p>
+                  <p className="text-xs text-muted-foreground mb-3">{deal.store}</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg font-bold text-foreground">${deal.price.toFixed(2)}</span>
+                    <span className="text-xs text-muted-foreground line-through">${deal.prevPrice.toFixed(2)}</span>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <div className="ios-card p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Receipt size={18} className="text-muted-foreground" />
+              <h2 className="text-lg font-semibold">Recent Scans</h2>
+            </div>
+            {recentScans.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No receipt scans found yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {recentScans.map((receipt) => (
+                  <div key={receipt.id} className="ios-card p-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                        <Receipt size={18} className="text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{receipt.storeName}</p>
+                        <p className="text-xs text-muted-foreground">{receipt.date}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-foreground">${receipt.total.toFixed(2)}</p>
+                      <span
+                        className={`text-[10px] font-medium px-2 py-1 rounded-full ${
+                          receipt.status === 'verified' ? 'bg-savings-light text-savings' : 'bg-warning/10 text-warning'
+                        }`}
+                      >
+                        {receipt.status === 'verified' ? '✓ Verified' : '⏳ Processing'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </motion.div>
-          ))}
-        </div> 
-      </div>*/}
+            )}
+          </div>
 
-      {/* Recent Scans */}
-
-      {/* div>
-      //   <p className="section-title">Recent Scans</p>
-      //   <div className="space-y-2">
-      //     {recentScans.map((receipt, i) => (
-      //       <motion.div
-      //         key={receipt.id}
-      //         initial={{ opacity: 0, y: 10 }}
-      //         animate={{ opacity: 1, y: 0 }}
-      //         transition={{ delay: 0.3 + i * 0.06 }}
-      //         className="ios-card flex items-center gap-3"
-      //       >
-      //         <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-      //           <Receipt size={18} className="text-muted-foreground" />
-      //         </div>
-      //         <div className="flex-1 min-w-0">
-      //           <p className="text-sm font-semibold text-foreground">{receipt.storeName}</p>
-      //           <p className="text-xs text-muted-foreground">{receipt.date}</p>
-      //         </div>
-      //         <div className="text-right">
-      //           <p className="text-sm font-semibold text-foreground">${receipt.total.toFixed(2)}</p>
-      //           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-      //             receipt.status === 'verified' ? 'bg-savings-light text-savings' : 'bg-warning/10 text-warning'
-      //           }`}>
-      //             {receipt.status === 'verified' ? '✓ Verified' : '⏳ Processing'}
-      //           </span>
-      //         </div>
-      //         <ChevronRight size={16} className="text-muted-foreground" />
-      //       </motion.div>
-      //     ))}
-      //   </div>
-      </div> */}
+          <div className="ios-card p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-lg font-semibold">Transactions by Date</h2>
+            </div>
+            {dateWiseTransactions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No transaction history available for the last 30 days.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Tx</TableHead>
+                    <TableHead className="text-right">Expenses</TableHead>
+                    <TableHead className="text-right">Savings</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dateWiseTransactions.slice(0, 5).map((row) => (
+                    <TableRow key={row.date}>
+                      <TableCell>{row.date}</TableCell>
+                      <TableCell className="text-right">{row.transactions}</TableCell>
+                      <TableCell className="text-right">${row.expenses.toFixed(2)}</TableCell>
+                      <TableCell className="text-right text-savings">${row.savings.toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
