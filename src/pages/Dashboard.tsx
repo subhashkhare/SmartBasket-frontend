@@ -224,9 +224,12 @@ const Dashboard = () => {
         </div>
         <Header />
       </div>
-
+      <div className='items-center justify-center pt-2'>
+        <h1 className="text-2xl font-bold text-foreground">Welcome</h1>
+        <h3 className="text-sm text-muted-foreground">You need to upload/scan receipt atleast once in a month.</h3>
+      </div>
       {/* Savings Card */}
-      <motion.div
+      {/* <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.1 }}
@@ -245,9 +248,9 @@ const Dashboard = () => {
           <ArrowDownRight size={12} className="text-success" />
           <span>Best-known basket spend · ${monthlySpend.toFixed(2)} total</span>
         </div>
-      </motion.div>
+      </motion.div> */}
 
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      {/* <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="ios-card py-3 px-3">
           <p className="text-[10px] text-muted-foreground">1-Month Transactions</p>
           <p className="text-base font-bold text-foreground">{monthlyTransactions}</p>
@@ -260,9 +263,9 @@ const Dashboard = () => {
           <p className="text-[10px] text-muted-foreground">Monthly Savings</p>
           <p className="text-base font-bold text-success">${totalSaved.toFixed(2)}</p>
         </div>
-      </div>
+      </div> */}
 
-      <div className="ios-card mb-4">
+      {/* <div className="ios-card mb-4">
         <p className="section-title mb-2">Date-wise Transactions (Last 30 Days)</p>
         {dateWiseTransactions.length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">No transactions available for the last 30 days.</p>
@@ -288,10 +291,10 @@ const Dashboard = () => {
             </TableBody>
           </Table>
         )}
-      </div>
+      </div> */}
 
       {/* Top Deals */}
-      <div className="mb-4">
+      {/* <div className="mb-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1.5">
             <Sparkles size={14} className="text-warning" />
@@ -334,41 +337,42 @@ const Dashboard = () => {
               </div>
             </motion.div>
           ))}
-        </div>
-      </div>
+        </div> 
+      </div>*/}
 
       {/* Recent Scans */}
-      <div>
-        <p className="section-title">Recent Scans</p>
-        <div className="space-y-2">
-          {recentScans.map((receipt, i) => (
-            <motion.div
-              key={receipt.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 + i * 0.06 }}
-              className="ios-card flex items-center gap-3"
-            >
-              <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                <Receipt size={18} className="text-muted-foreground" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{receipt.storeName}</p>
-                <p className="text-xs text-muted-foreground">{receipt.date}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-semibold text-foreground">${receipt.total.toFixed(2)}</p>
-                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                  receipt.status === 'verified' ? 'bg-savings-light text-savings' : 'bg-warning/10 text-warning'
-                }`}>
-                  {receipt.status === 'verified' ? '✓ Verified' : '⏳ Processing'}
-                </span>
-              </div>
-              <ChevronRight size={16} className="text-muted-foreground" />
-            </motion.div>
-          ))}
-        </div>
-      </div>
+
+      {/* div>
+      //   <p className="section-title">Recent Scans</p>
+      //   <div className="space-y-2">
+      //     {recentScans.map((receipt, i) => (
+      //       <motion.div
+      //         key={receipt.id}
+      //         initial={{ opacity: 0, y: 10 }}
+      //         animate={{ opacity: 1, y: 0 }}
+      //         transition={{ delay: 0.3 + i * 0.06 }}
+      //         className="ios-card flex items-center gap-3"
+      //       >
+      //         <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+      //           <Receipt size={18} className="text-muted-foreground" />
+      //         </div>
+      //         <div className="flex-1 min-w-0">
+      //           <p className="text-sm font-semibold text-foreground">{receipt.storeName}</p>
+      //           <p className="text-xs text-muted-foreground">{receipt.date}</p>
+      //         </div>
+      //         <div className="text-right">
+      //           <p className="text-sm font-semibold text-foreground">${receipt.total.toFixed(2)}</p>
+      //           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+      //             receipt.status === 'verified' ? 'bg-savings-light text-savings' : 'bg-warning/10 text-warning'
+      //           }`}>
+      //             {receipt.status === 'verified' ? '✓ Verified' : '⏳ Processing'}
+      //           </span>
+      //         </div>
+      //         <ChevronRight size={16} className="text-muted-foreground" />
+      //       </motion.div>
+      //     ))}
+      //   </div>
+      </div> */}
     </div>
   );
 };
