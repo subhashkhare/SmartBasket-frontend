@@ -112,7 +112,7 @@ const ComparisonScreen = () => {
   const [stores, setStores] = useState<Store[]>([]);
   const [prices, setPrices] = useState<PriceObservation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const optimizedRoute = location.state?.optimizedRoute as RouteStop[] | undefined;
   const initialMode = location.state?.mode as OptimizerMode | undefined;
@@ -125,12 +125,38 @@ const ComparisonScreen = () => {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      setLoadError(null);
-      const [storesResp, pricesResp] = await Promise.all([apiService.getStores(), apiService.getPrices()]);
-      if (storesResp.error) setLoadError(storesResp.error);
-      if (pricesResp.error) setLoadError(pricesResp.error);
-      if (storesResp.data) setStores(storesResp.data);
-      if (pricesResp.data) setPrices(pricesResp.data);
+      setWarning(null);
+
+      const [storesResp, pricesResp] = await Promise.allSettled([apiService.getStores(), apiService.getPrices()]);
+
+      const storesResult =
+        storesResp.status === 'fulfilled' && !storesResp.value.error ? storesResp.value.data ?? [] : [];
+      const pricesResult =
+        pricesResp.status === 'fulfilled' && !pricesResp.value.error ? pricesResp.value.data ?? [] : [];
+
+      const errors: string[] = [];
+      if (storesResp.status === 'rejected' || (storesResp.status === 'fulfilled' && storesResp.value?.error)) {
+        errors.push(
+          storesResp.status === 'rejected'
+            ? 'Unable to load stores.'
+            : storesResp.value.error || 'Unable to load stores.'
+        );
+      }
+      if (pricesResp.status === 'rejected' || (pricesResp.status === 'fulfilled' && pricesResp.value?.error)) {
+        errors.push(
+          pricesResp.status === 'rejected'
+            ? 'Unable to load price data.'
+            : pricesResp.value.error || 'Unable to load price data.'
+        );
+      }
+
+      if (errors.length > 0) {
+        const message = errors.join(' ');
+        setWarning('Live comparison data is currently unavailable. ' + message);
+      }
+
+      setStores(storesResult);
+      setPrices(pricesResult);
       setLoading(false);
     };
 
@@ -506,13 +532,14 @@ const ComparisonScreen = () => {
     return <div className="page-container py-8 text-sm text-muted-foreground">Loading comparison data...</div>;
   }
 
-  if (loadError) {
-    return <div className="page-container py-8 text-sm text-destructive">Failed to load comparison data: {loadError}</div>;
-  }
-
   return (
     <div className="page-container">
       <h1 className="text-xl font-bold text-foreground mb-1 pt-2">Price Comparison</h1>
+      {warning ? (
+        <div className="ios-card mb-4 border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          {warning}
+        </div>
+      ) : null}
       <p className="text-sm text-muted-foreground mb-1">{shoppingListItems.length} items in your list</p>
       <p className="text-xs text-muted-foreground mb-3">Searching stores within {searchRadius} miles</p>
 

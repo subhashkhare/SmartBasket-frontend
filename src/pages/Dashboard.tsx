@@ -95,20 +95,39 @@ const Dashboard = () => {
   const [stores, setStores] = useState<Store[]>([]);
   const [prices, setPrices] = useState<PriceObservation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const topDealsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      setError(null);
-      const [storesResp, pricesResp] = await Promise.all([apiService.getStores(), apiService.getPrices()]);
+      setWarning(null);
 
-      if (storesResp.error) setError(storesResp.error);
-      if (pricesResp.error) setError(pricesResp.error);
-      if (storesResp.data) setStores(storesResp.data);
-      if (pricesResp.data) setPrices(pricesResp.data);
+      const [storesResp, pricesResp] = await Promise.allSettled([apiService.getStores(), apiService.getPrices()]);
 
+      const storesResult =
+        storesResp.status === 'fulfilled' && !storesResp.value.error ? storesResp.value.data ?? [] : [];
+      const pricesResult =
+        pricesResp.status === 'fulfilled' && !pricesResp.value.error ? pricesResp.value.data ?? [] : [];
+
+      if (storesResult.length === 0 || pricesResult.length === 0) {
+        const storeError =
+          storesResp.status === 'rejected'
+            ? 'Unable to load stores.'
+            : storesResp.value?.error ?? '';
+        const pricesError =
+          pricesResp.status === 'rejected'
+            ? 'Unable to load price data.'
+            : pricesResp.value?.error ?? '';
+
+        setWarning(
+          'Live market data is currently unavailable. Showing available receipt history only.' +
+            [storeError, pricesError].filter(Boolean).join(' ')
+        );
+      }
+
+      setStores(storesResult);
+      setPrices(pricesResult);
       setLoading(false);
     };
 
@@ -227,10 +246,6 @@ const Dashboard = () => {
     return <div className="page-container py-8 text-sm text-muted-foreground">Loading dashboard data...</div>;
   }
 
-  if (error) {
-    return <div className="page-container py-8 text-sm text-destructive">Failed to load dashboard data: {error}</div>;
-  }
-
   return (
     <div className="page-container">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-6">
@@ -240,6 +255,12 @@ const Dashboard = () => {
         </div>
         <Header />
       </div>
+
+      {warning ? (
+        <div className="ios-card mb-4 border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          {warning}
+        </div>
+      ) : null}
 
       <motion.div
         initial={{ opacity: 0, y: 16 }}
