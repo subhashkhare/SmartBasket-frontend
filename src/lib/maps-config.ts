@@ -1,0 +1,3 @@
+// Replace with your Google Maps API key (publishable client-side key)
+// Enable: Maps JavaScript API, Directions API, Places API
+export const GOOGLE_MAPS_API_KEY = 'AIzaSyDLGO7GWry9r4O4eltrytny1AHmI9vIPsg';

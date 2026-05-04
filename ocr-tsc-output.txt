@@ -1,0 +1,19 @@
+﻿node_modules/@anthropic-ai/sdk/client.d.ts(109,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/@anthropic-ai/sdk/core/api-promise.d.ts(9,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/@anthropic-ai/sdk/core/pagination.d.ts(7,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/@anthropic-ai/sdk/core/streaming.d.ts(9,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/@anthropic-ai/sdk/internal/decoders/line.d.ts(9,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/@anthropic-ai/sdk/internal/types.d.ts(48,181): error TS2307: Cannot find module '../../../node_modules/undici-types/index.d.ts' or its corresponding type declarations.
+node_modules/@anthropic-ai/sdk/internal/types.d.ts(48,340): error TS2307: Cannot find module '../../../../../node_modules/undici-types/index.d.ts' or its corresponding type declarations.
+node_modules/@anthropic-ai/sdk/internal/types.d.ts(48,424): error TS2307: Cannot find module '../../../../../../node_modules/undici-types/index.d.ts' or its corresponding type declarations.
+node_modules/@anthropic-ai/sdk/internal/types.d.ts(48,511): error TS2307: Cannot find module '../../../../../../../node_modules/undici-types/index.d.ts' or its corresponding type declarations.
+node_modules/@anthropic-ai/sdk/internal/types.d.ts(48,601): error TS2307: Cannot find module '../../../../../../../../node_modules/undici-types/index.d.ts' or its corresponding type declarations.
+node_modules/@anthropic-ai/sdk/internal/types.d.ts(48,694): error TS2307: Cannot find module '../../../../../../../../../node_modules/undici-types/index.d.ts' or its corresponding type declarations.
+node_modules/@anthropic-ai/sdk/internal/types.d.ts(48,790): error TS2307: Cannot find module '../../../../../../../../../../node_modules/undici-types/index.d.ts' or its corresponding type declarations.
+node_modules/@anthropic-ai/sdk/lib/BetaMessageStream.d.ts(24,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/@anthropic-ai/sdk/lib/MessageStream.d.ts(23,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+node_modules/@anthropic-ai/sdk/lib/tools/BetaToolRunner.d.ts(14,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
+src/lib/ocr.ts(1,22): error TS2307: Cannot find module 'tesseract.js-core/tesseract-core.wasm.js?url' or its corresponding type declarations.
+src/lib/ocr.ts(5,24): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', or 'nodenext'.
+src/lib/ocr.ts(5,36): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/lib/ocr.ts(150,27): error TS2802: Type 'RegExpStringIterator<RegExpExecArray>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.

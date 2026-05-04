@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 97%;
+    --foreground: 0 0% 7%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 7%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 7%;
+
+    --primary: 211 100% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 0 0% 20%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 220 14% 96%;
+    --accent-foreground: 0 0% 7%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --savings: 142 71% 45%;
+    --savings-light: 142 76% 94%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 211 100% 50%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .skip-link {
+    position: absolute;
+    left: 0.75rem;
+    top: -2.5rem;
+    z-index: 1000;
+    border-radius: 0.5rem;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: top 0.15s ease;
+  }
+
+  .skip-link:focus {
+    top: 0.75rem;
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .app-shell {
+    @apply mx-auto max-w-[480px] min-h-screen relative bg-background;
+  }
+
+  .page-container {
+    @apply px-4 pt-2 pb-24;
+  }
+
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2;
+  }
+
+  .ios-card {
+    @apply bg-card rounded-xl p-4 shadow-sm;
+  }
+
+  .savings-badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-savings-light text-savings;
+  }
+
+  .tap-highlight {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
