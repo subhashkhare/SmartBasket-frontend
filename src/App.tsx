@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useState, useEffect } from "react";
 import BottomNav from "@/components/BottomNav";
+import Header from "@/components/Header";
 import PageTransition from "@/components/PageTransition";
 import Dashboard from "@/pages/Dashboard";
 import ScannerView from "@/pages/ScannerView";
@@ -46,6 +47,16 @@ const App = () => {
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
+            <div className="mx-auto flex max-w-[480px] items-center justify-between px-4 py-3">
+              <a href="/" className="text-lg font-bold tracking-tight text-foreground">SmartCart</a>
+              {isAuthenticated ? (
+                <Header />
+              ) : (
+                <div className="w-10 h-10" />
+              )}
+            </div>
+          </header>
           <a href="#main-content" className="skip-link">Skip to main content</a>
           {isAuthenticated ? (
             <div className="app-shell">
