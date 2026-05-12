@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { ArrowRight, Store as StoreIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { RouteStop } from '@/lib/route-optimizer';
 import { apiService } from '@/lib/api';
@@ -109,9 +110,6 @@ const ComparisonScreen = () => {
   const [searchRadius] = useState(() => getStoredSearchRadius());
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [prices, setPrices] = useState<PriceObservation[]>([]);
-  const [loading, setLoading] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
 
   const optimizedRoute = location.state?.optimizedRoute as RouteStop[] | undefined;
@@ -122,46 +120,34 @@ const ComparisonScreen = () => {
     if (initialMode) setMode(initialMode);
   }, [initialMode]);
 
+  const { data: storesResp, isLoading: storesLoading } = useQuery({
+    queryKey: ['stores'],
+    queryFn: () => apiService.getStores(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: pricesResp, isLoading: pricesLoading } = useQuery({
+    queryKey: ['prices'],
+    queryFn: () => apiService.getPrices(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const loading = storesLoading || pricesLoading;
+
+  const stores: Store[] = (!storesResp?.error && storesResp?.data) ? storesResp.data : [];
+  const prices: PriceObservation[] = (!pricesResp?.error && pricesResp?.data) ? pricesResp.data : [];
+
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
+    if (loading) return;
+    const errors: string[] = [];
+    if (storesResp?.error) errors.push(storesResp.error);
+    if (pricesResp?.error) errors.push(pricesResp.error);
+    if (errors.length > 0) {
+      setWarning('Live comparison data is currently unavailable. ' + errors.join(' '));
+    } else {
       setWarning(null);
-
-      const [storesResp, pricesResp] = await Promise.allSettled([apiService.getStores(), apiService.getPrices()]);
-
-      const storesResult =
-        storesResp.status === 'fulfilled' && !storesResp.value.error ? storesResp.value.data ?? [] : [];
-      const pricesResult =
-        pricesResp.status === 'fulfilled' && !pricesResp.value.error ? pricesResp.value.data ?? [] : [];
-
-      const errors: string[] = [];
-      if (storesResp.status === 'rejected' || (storesResp.status === 'fulfilled' && storesResp.value?.error)) {
-        errors.push(
-          storesResp.status === 'rejected'
-            ? 'Unable to load stores.'
-            : storesResp.value.error || 'Unable to load stores.'
-        );
-      }
-      if (pricesResp.status === 'rejected' || (pricesResp.status === 'fulfilled' && pricesResp.value?.error)) {
-        errors.push(
-          pricesResp.status === 'rejected'
-            ? 'Unable to load price data.'
-            : pricesResp.value.error || 'Unable to load price data.'
-        );
-      }
-
-      if (errors.length > 0) {
-        const message = errors.join(' ');
-        setWarning('Live comparison data is currently unavailable. ' + message);
-      }
-
-      setStores(storesResult);
-      setPrices(pricesResult);
-      setLoading(false);
-    };
-
-    void load();
-  }, []);
+    }
+  }, [loading, storesResp?.error, pricesResp?.error]);
 
   useEffect(() => {
     try {
