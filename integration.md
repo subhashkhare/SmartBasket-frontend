@@ -54,6 +54,12 @@ Smart Cart Saver is a Progressive Web App (PWA) for grocery price comparison and
    PORT=5000
    ```
 
+4. **Frontend production config**:
+   When deploying the frontend, set the backend URL in Vercel or your hosting provider:
+   ```env
+   VITE_API_BASE_URL=https://your-backend-domain.vercel.app/api
+   ```
+
 4. **Seed the database** (optional):
    ```bash
    npm run seed

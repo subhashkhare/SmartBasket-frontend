@@ -43,6 +43,13 @@ A modern grocery shopping app that helps you save money by tracking prices and c
      - `APP_URL`: Frontend application URL for email links
    - Start backend: `cd backend && npm run dev`
 
+5. **Frontend deployment config**:
+   - In production, set `VITE_API_BASE_URL` to your backend API URL, for example:
+     ```env
+     VITE_API_BASE_URL=https://your-backend-domain.vercel.app/api
+     ```
+   - This ensures the frontend uses the correct backend instead of a hardcoded default.
+
 ### Notification Services
 The app sends welcome notifications on successful registration:
 

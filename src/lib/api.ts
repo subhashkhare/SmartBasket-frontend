@@ -1,8 +1,20 @@
 import { Store, PriceObservation } from '@/types';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.PROD ? 'https://smart-basket-backend-inky.vercel.app/api' : 'http://localhost:5000/api');
+const API_BASE_URL = (() => {
+  const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim();
+  if (configured) {
+    const normalized = configured.replace(/\/$/, '');
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
+  if (import.meta.env.PROD) {
+    console.warn(
+      'VITE_API_BASE_URL is not configured. Frontend will try to use localhost, which will fail in production.'
+    );
+  }
+
+  return 'http://localhost:5000/api';
+})();
 
 interface AuthResponse {
   token: string;
@@ -663,7 +675,11 @@ class ApiService {
     }
   }
 
-  async upsertReceiptItemsByStore(storeId: string, items: ReceiptPriceItemPayload[]): Promise<ApiResponse<{ updated: number }>> {
+  async upsertReceiptItemsByStore(
+    storeId: string,
+    items: ReceiptPriceItemPayload[],
+    receiptDate?: string | null,
+  ): Promise<ApiResponse<{ updated: number; alreadyExists?: boolean }>> {
     const userId = this.getCurrentUserId();
     const existing = await this.getPrices();
     if (existing.error) {
@@ -671,6 +687,17 @@ class ApiService {
     }
 
     const allPrices = existing.data || [];
+
+    // Duplicate check: if any price record already has this store+date, the receipt was already saved
+    if (receiptDate) {
+      const isDuplicate = allPrices.some(
+        (p) => p.receiptDate === receiptDate && p.prices?.[storeId] !== undefined,
+      );
+      if (isDuplicate) {
+        return { data: { updated: 0, alreadyExists: true } };
+      }
+    }
+
     let updatedCount = 0;
 
     for (const item of items) {
@@ -686,10 +713,9 @@ class ApiService {
           body: JSON.stringify({
             itemId,
             itemName,
-            prices: {
-              [storeId]: Number(item.unitPrice.toFixed(2)),
-            },
+            prices: { [storeId]: Number(item.unitPrice.toFixed(2)) },
             userId,
+            receiptDate: receiptDate || null,
           }),
         });
 
@@ -702,7 +728,7 @@ class ApiService {
       }
 
       const mergedPrices: Record<string, number> = {
-        ...(existingRecord.prices ? existingRecord.prices : {}),
+        ...(existingRecord.prices ?? {}),
       };
       mergedPrices[storeId] = Number(item.unitPrice.toFixed(2));
 
@@ -713,6 +739,7 @@ class ApiService {
           itemName,
           prices: mergedPrices,
           userId: existingRecord.userId || userId,
+          receiptDate: receiptDate || existingRecord.receiptDate || null,
         }),
       });
 

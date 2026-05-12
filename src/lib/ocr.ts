@@ -198,8 +198,18 @@ export async function extractReceiptWithClaude(
 
     onProgress?.(50);
 
+    // Detect actual image format so Claude receives the correct media type
+    const mediaType = ((): 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' => {
+      if (image instanceof File) {
+        if (image.type === 'image/png') return 'image/png';
+        if (image.type === 'image/webp') return 'image/webp';
+        if (image.type === 'image/gif') return 'image/gif';
+      }
+      return 'image/jpeg';
+    })();
+
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       messages: [
         {
@@ -209,7 +219,7 @@ export async function extractReceiptWithClaude(
               type: 'image',
               source: {
                 type: 'base64',
-                media_type: 'image/jpeg',
+                media_type: mediaType,
                 data: base64Image,
               },
             },
