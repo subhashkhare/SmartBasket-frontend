@@ -636,6 +636,10 @@ class ApiService {
     return this.request<Store[]>('/stores');
   }
 
+  async searchStores(zip: string, name: string): Promise<ApiResponse<Store[]>> {
+    return this.request<Store[]>(`/stores/search?zip=${encodeURIComponent(zip)}&name=${encodeURIComponent(name)}`);
+  }
+
   async getStore(id: string): Promise<ApiResponse<Store>> {
     return this.request<Store>(`/stores/${id}`);
   }

@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight, Store as StoreIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { RouteStop } from '@/lib/route-optimizer';
 import { apiService } from '@/lib/api';
 import { PriceObservation, ShoppingListItem, Store } from '@/types';
@@ -104,8 +104,10 @@ function matchPriceForShoppingItem(item: ShoppingListItem, prices: PriceObservat
 
 const ComparisonScreen = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<OptimizerMode>('one-stop');
   const [manualZip, setManualZip] = useState('');
+  const [zipLocationName, setZipLocationName] = useState('');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [searchRadius] = useState(() => getStoredSearchRadius());
   const [isGeocoding, setIsGeocoding] = useState(false);
@@ -263,6 +265,9 @@ const ComparisonScreen = () => {
       const nextLocation = { lat: Number.parseFloat(results[0].lat), lng: Number.parseFloat(results[0].lon) };
       setUserLocation(nextLocation);
       setManualZip(normalized);
+      const displayName: string = results[0].display_name || '';
+      const parts = displayName.split(',').map((s: string) => s.trim());
+      setZipLocationName(parts.slice(0, 2).join(', '));
     } catch (err) {
       setGeocodeError('Geocoding failed - try again');
       console.error('Geocoding error', err);
@@ -280,6 +285,30 @@ const ComparisonScreen = () => {
   const multiStopRouteStores = optimizedRoute
     ? optimizedRoute.map((stop) => stop.store)
     : sorted.slice(0, 2).map((comp) => comp.store);
+
+  // Unique stores from the Best Multi-Store Combo column, each with the items assigned to it
+  const multiStoreComboStops = useMemo(() => {
+    const storeItemsMap = new Map<string, { store: Store; items: string[] }>();
+
+    for (const { item, matchedPrice } of comparisonRows) {
+      if (!matchedPrice) continue;
+      const priceEntries = Object.entries(matchedPrice.prices || {})
+        .filter(([, v]) => Number(v) > 0)
+        .sort(([, a], [, b]) => Number(a) - Number(b));
+      if (priceEntries.length === 0) continue;
+
+      const cheapestStoreId = priceEntries[0][0];
+      const store = storeById.get(cheapestStoreId);
+      if (!store) continue;
+
+      if (!storeItemsMap.has(cheapestStoreId)) {
+        storeItemsMap.set(cheapestStoreId, { store, items: [] });
+      }
+      storeItemsMap.get(cheapestStoreId)!.items.push(item.name);
+    }
+
+    return Array.from(storeItemsMap.values());
+  }, [comparisonRows, storeById]);
 
   const preferredStoreName = useMemo(() => {
     try {
@@ -367,22 +396,10 @@ const ComparisonScreen = () => {
   }, [effectiveBestStoreId, mode, multiStopRouteStores, sorted]);
 
   const openMapInNewTab = () => {
-    const params = new URLSearchParams();
-    if (ctaStoreIds.length > 0) {
-      params.set('highlightStoreIds', ctaStoreIds.join(','));
-    }
-    if (mode === 'multi-stop') {
-      params.set('autoShowRoute', '1');
-    }
-
-    const mapPath = params.toString() ? `/map?${params.toString()}` : '/map';
-    const mapUrl = `${globalThis.location.origin}${mapPath}`;
-    const opened = window.open(mapUrl, '_blank', 'noopener,noreferrer');
-
-    // Fallback if popup is blocked by browser settings.
-    if (!opened) {
-      globalThis.location.assign(mapPath);
-    }
+    const state: Record<string, unknown> = {};
+    if (ctaStoreIds.length > 0) state.highlightStoreIds = ctaStoreIds;
+    if (mode === 'multi-stop') state.autoShowRoute = true;
+    navigate('/map', { state });
   };
 
   const tableData: TableRowData[] = useMemo(() => {
@@ -548,6 +565,7 @@ const ComparisonScreen = () => {
           </button>
         </div>
         {geocodeError && <p className="text-xs text-destructive">{geocodeError}</p>}
+        {zipLocationName && !geocodeError && <p className="text-xs text-gray-400">{zipLocationName}</p>}
       </div>
 
       <div className="flex gap-1 p-1 bg-secondary rounded-xl mb-5">
@@ -593,7 +611,37 @@ const ComparisonScreen = () => {
               <p className="text-sm font-semibold text-foreground">Optimal Multi-Stop Route</p>
             </div>
             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 mb-4">
-              {routeStopsForView.length > 0 ? (
+              {multiStoreComboStops.length > 0 ? (
+                <>
+                  {multiStoreComboStops.slice(0, 3).map((stop, index, arr) => (
+                    <div key={stop.store._id || String(stop.store.id)} className="flex items-center gap-2 py-2 px-1 sm:flex-1 sm:min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center overflow-hidden">
+                        {stop.store.logo && stop.store.logo.startsWith('http') ? (
+                          <img src={stop.store.logo} alt="" className="w-6 h-6 object-contain" onError={(e) => { (e.target as HTMLImageElement).replaceWith(Object.assign(document.createTextNode('🏪'))); }} />
+                        ) : (
+                          <span className="text-lg">{stop.store.logo || '🏪'}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-foreground truncate">{stop.store.name}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {stop.items.length} item{stop.items.length !== 1 ? 's' : ''}: {stop.items.join(', ')}
+                        </p>
+                      </div>
+                      {(index < arr.length - 1 || multiStoreComboStops.length > 3) && (
+                        <ArrowRight size={14} className="text-muted-foreground shrink-0 ml-1 sm:mx-2" />
+                      )}
+                    </div>
+                  ))}
+                  {multiStoreComboStops.length > 3 && (
+                    <div className="flex items-center self-center">
+                      <span className="text-sm font-semibold text-muted-foreground px-1">
+                        +{multiStoreComboStops.length - 3} more
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : routeStopsForView.length > 0 ? (
                 routeStopsForView.map((stop, index) => (
                   <div key={stop.store._id || String(stop.store.id)} className="flex items-center gap-2 py-2 px-1 sm:flex-1 sm:min-w-0">
                     <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-lg">
@@ -601,22 +649,13 @@ const ComparisonScreen = () => {
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-foreground">{stop.store.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{stop.items.length} items</p>
+                      <p className="text-[10px] text-muted-foreground">{stop.items.length} item{stop.items.length !== 1 ? 's' : ''}</p>
                     </div>
                     {index < routeStopsForView.length - 1 && <ArrowRight size={14} className="text-muted-foreground ml-1 sm:mx-2" />}
                   </div>
                 ))
               ) : (
-                multiStopRouteStores.slice(0, 2).map((store, index) => (
-                  <div key={store._id || String(store.id)} className="flex items-center gap-2 flex-1">
-                    <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-lg">{store.logo || '🏪'}</div>
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">{store.name}</p>
-                      <p className="text-[10px] text-muted-foreground">Best-value stop</p>
-                    </div>
-                    {index < Math.min(2, multiStopRouteStores.length) - 1 && <ArrowRight size={14} className="text-muted-foreground" />}
-                  </div>
-                ))
+                <p className="text-xs text-muted-foreground py-2">No multi-store combo data available yet.</p>
               )}
             </div>
             <div className="flex items-center justify-between pt-3 border-t border-border">

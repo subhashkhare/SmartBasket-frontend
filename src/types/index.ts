@@ -24,6 +24,7 @@ export interface Store {
   logo?: string;
   isMembership?: boolean;
   chainId?: string;
+  distanceMiles?: number | null;
 }
 
 export interface PriceObservation {

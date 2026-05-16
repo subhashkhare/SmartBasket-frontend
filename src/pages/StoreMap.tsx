@@ -185,10 +185,13 @@ const StoreMapWithGoogle = ({
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [showRoute, setShowRoute] = useState(autoShowRoute);
 
-  const visibleStores = useMemo(
-    () => stores.filter((store) => distanceBetween({ ...store, lat: userLocation.lat, lng: userLocation.lng } as Store, store) <= searchRadius),
-    [searchRadius, stores, userLocation]
-  );
+  const visibleStores = useMemo(() => {
+    const withinRadius = stores.filter(
+      (s) => s.lat != null && s.lng != null &&
+        distanceBetween({ ...s, lat: userLocation.lat, lng: userLocation.lng } as Store, s) <= searchRadius
+    );
+    return withinRadius.length > 0 ? withinRadius : stores.filter((s) => s.lat != null && s.lng != null);
+  }, [searchRadius, stores, userLocation]);
 
   const comparisons: StoreComparison[] = useMemo(() => {
     if (!visibleStores.length) return [];
@@ -489,10 +492,13 @@ const StoreMapFallback = ({
   highlightStoreIds: string[];
   mapUnavailableReason?: string | null;
 }) => {
-  const visibleStores = useMemo(
-    () => stores.filter((store) => distanceBetween({ ...store, lat: userLocation.lat, lng: userLocation.lng } as Store, store) <= searchRadius),
-    [searchRadius, stores, userLocation]
-  );
+  const visibleStores = useMemo(() => {
+    const withinRadius = stores.filter(
+      (s) => s.lat != null && s.lng != null &&
+        distanceBetween({ ...s, lat: userLocation.lat, lng: userLocation.lng } as Store, s) <= searchRadius
+    );
+    return withinRadius.length > 0 ? withinRadius : stores.filter((s) => s.lat != null && s.lng != null);
+  }, [searchRadius, stores, userLocation]);
 
   const comparisons: StoreComparison[] = useMemo(() => {
     if (!visibleStores.length) return [];

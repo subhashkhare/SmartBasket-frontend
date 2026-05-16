@@ -18,8 +18,6 @@ const Registration = () => {
   const [mode, setMode] = useState<AuthMode>('sign-in');
   const [showPin, setShowPin] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [stores, setStores] = useState<AppStore[]>([]);
-  const [storesLoading, setStoresLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<UserData>({
     phoneNumber: '',
@@ -29,28 +27,37 @@ const Registration = () => {
     preferredStore: '',
   });
 
-  // Check if user is already registered on mount
+  const [storeInput, setStoreInput] = useState('');
+  const [storeSuggestions, setStoreSuggestions] = useState<AppStore[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [storeSuggestionsLoading, setStoreSuggestionsLoading] = useState(false);
+
   useEffect(() => {
-    // Default to register mode since we're here when not authenticated
     setMode('register');
   }, []);
 
   useEffect(() => {
-    const loadStores = async () => {
-      setStoresLoading(true);
-      const response = await apiService.getStores();
-      if (!response.error && response.data) {
-        setStores(response.data);
-        setFormData((prev) => ({
-          ...prev,
-          preferredStore: prev.preferredStore || response.data?.[0]?.name || '',
-        }));
-      }
-      setStoresLoading(false);
-    };
+    if (storeInput.length < 3 || !/^\d{5}$/.test(formData.zipCode)) {
+      setStoreSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
 
-    void loadStores();
-  }, []);
+    const timer = setTimeout(async () => {
+      setStoreSuggestionsLoading(true);
+      const response = await apiService.searchStores(formData.zipCode, storeInput);
+      if (!response.error && response.data) {
+        setStoreSuggestions(response.data);
+        setShowSuggestions(true);
+      } else {
+        setStoreSuggestions([]);
+        setShowSuggestions(storeInput.length >= 3);
+      }
+      setStoreSuggestionsLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [storeInput, formData.zipCode]);
 
   const normalizeUSPhoneNumber = (phone: string): string => {
     const digitsOnly = [...phone].filter(char => /\d/.test(char)).join('');
@@ -76,7 +83,7 @@ const Registration = () => {
     return /^\d{5}(?:-\d{4})?$/.test(zipCode);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     setError(null);
@@ -86,7 +93,6 @@ const Registration = () => {
     e.preventDefault();
     setError(null);
 
-    // Validation
     if (!validatePhoneNumber(formData.phoneNumber)) {
       setError('Please enter a valid US phone number');
       return;
@@ -108,7 +114,7 @@ const Registration = () => {
     }
 
     if (!formData.preferredStore) {
-      setError('Please select a preferred store');
+      setError('Please select a preferred store from the suggestions');
       return;
     }
 
@@ -129,7 +135,6 @@ const Registration = () => {
 
       if (response.data) {
         apiService.setToken(response.data.token);
-        // Reload page to trigger auth check in App.tsx
         globalThis.location.href = '/';
       }
     } catch (err: unknown) {
@@ -157,7 +162,7 @@ const Registration = () => {
     setLoading(true);
     try {
       const response = await apiService.login(
-        extractPhoneDigits(formData.phoneNumber),
+        normalizeUSPhoneNumber(formData.phoneNumber),
         formData.pin
       );
 
@@ -168,7 +173,6 @@ const Registration = () => {
 
       if (response.data) {
         apiService.setToken(response.data.token);
-        // Reload page to trigger auth check in App.tsx
         globalThis.location.href = '/';
       }
     } catch (err: unknown) {
@@ -271,27 +275,7 @@ const Registration = () => {
             </div>
           )}
 
-          {/* ZIP Code (only for registration) */}
-          {mode === 'register' && (
-            <div>
-              <label htmlFor="zipCode" className="block text-sm font-medium text-foreground mb-2">
-                ZIP Code
-              </label>
-              <input
-                id="zipCode"
-                type="text"
-                name="zipCode"
-                value={formData.zipCode}
-                onChange={handleInputChange}
-                placeholder="90210"
-                maxLength={5}
-                className="w-full h-11 rounded-xl bg-card border border-border px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              <p className="text-[10px] text-muted-foreground mt-1">Must be 5 digits</p>
-            </div>
-          )}
-
-          {/* PIN/ZIP */}
+          {/* PIN */}
           <div>
             <label htmlFor="pin" className="block text-sm font-medium text-foreground mb-2">
               {mode === 'register' ? 'Create PIN' : 'PIN'}
@@ -319,28 +303,77 @@ const Registration = () => {
             )}
           </div>
 
-          {/* Preferred Store (only for registration) */}
+          {/* ZIP Code (only for registration) */}
           {mode === 'register' && (
             <div>
+              <label htmlFor="zipCode" className="block text-sm font-medium text-foreground mb-2">
+                ZIP Code
+              </label>
+              <input
+                id="zipCode"
+                type="text"
+                name="zipCode"
+                value={formData.zipCode}
+                onChange={handleInputChange}
+                placeholder="90210"
+                maxLength={5}
+                className="w-full h-11 rounded-xl bg-card border border-border px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">Must be 5 digits</p>
+            </div>
+          )}
+
+          {/* Preferred Store (only for registration) */}
+          {mode === 'register' && (
+            <div className="relative">
               <label htmlFor="preferredStore" className="block text-sm font-medium text-foreground mb-2">
                 Preferred Store
               </label>
-              <select
+              <input
                 id="preferredStore"
-                name="preferredStore"
-                value={formData.preferredStore}
-                onChange={handleInputChange}
-                disabled={storesLoading || stores.length === 0}
-                className="w-full h-11 rounded-xl bg-card border border-border px-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {stores.length > 0 ? stores.map(store => (
-                  <option key={store._id || store.id} value={store.name}>
-                    {store.logo || '🏪'} {store.name}
-                  </option>
-                )) : (
-                  <option value="">{storesLoading ? 'Loading stores...' : 'No stores found'}</option>
-                )}
-              </select>
+                type="text"
+                value={storeInput}
+                onChange={(e) => {
+                  setStoreInput(e.target.value);
+                  setFormData(prev => ({ ...prev, preferredStore: '' }));
+                  setError(null);
+                }}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                onFocus={() => storeSuggestions.length > 0 && setShowSuggestions(true)}
+                placeholder={/^\d{5}$/.test(formData.zipCode) ? 'Type at least 3 characters...' : 'Enter ZIP code first'}
+                disabled={!/^\d{5}$/.test(formData.zipCode)}
+                autoComplete="off"
+                className="w-full h-11 rounded-xl bg-card border border-border px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              {storeSuggestionsLoading && (
+                <p className="text-[10px] text-muted-foreground mt-1">Searching nearby stores...</p>
+              )}
+              {formData.preferredStore && (
+                <p className="text-[10px] text-green-600 mt-1">✓ {formData.preferredStore}</p>
+              )}
+              {showSuggestions && storeSuggestions.length === 0 && !storeSuggestionsLoading && (
+                <p className="text-[10px] text-muted-foreground mt-1">No stores found within 10 miles</p>
+              )}
+              {showSuggestions && storeSuggestions.length > 0 && (
+                <ul className="absolute z-10 w-full mt-1 bg-card border border-border rounded-xl shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+                  {storeSuggestions.map(store => (
+                    <li
+                      key={store._id || store.id}
+                      onMouseDown={() => {
+                        setStoreInput(store.name);
+                        setFormData(prev => ({ ...prev, preferredStore: store.name }));
+                        setShowSuggestions(false);
+                      }}
+                      className="px-4 py-3 cursor-pointer hover:bg-secondary border-b border-border last:border-0"
+                    >
+                      <div className="text-sm font-medium text-foreground">
+                        {store.logo || '🏪'} {store.name}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{store.address}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

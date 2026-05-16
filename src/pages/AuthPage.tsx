@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiService } from '@/lib/api';
+import { Store as AppStore } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +19,7 @@ type RegisterFormErrors = {
   email?: string;
   pin?: string;
   zipCode?: string;
+  preferredStore?: string;
 };
 
 const usPhoneRegex = /^(?:\+1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}$/;
@@ -33,6 +35,59 @@ export default function AuthPage() {
   const [registerErrors, setRegisterErrors] = useState<RegisterFormErrors>({});
   const showLoginPrompt = searchParams.get('next') === 'login';
 
+  const [zipCodeValue, setZipCodeValue] = useState('');
+  const [zipLocation, setZipLocation] = useState('');
+  const [storeInput, setStoreInput] = useState('');
+  const [selectedStore, setSelectedStore] = useState('');
+  const [storeSuggestions, setStoreSuggestions] = useState<AppStore[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [storeSuggestionsLoading, setStoreSuggestionsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!/^\d{5}$/.test(zipCodeValue)) {
+      setZipLocation('');
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://api.zippopotam.us/us/${zipCodeValue}`);
+        if (res.ok) {
+          const data = await res.json();
+          const place = data.places?.[0];
+          if (place) setZipLocation(`${place['place name']}, ${place['state abbreviation']}`);
+        } else {
+          setZipLocation('');
+        }
+      } catch {
+        setZipLocation('');
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [zipCodeValue]);
+
+  useEffect(() => {
+    if (storeInput.length < 3 || !/^\d{5}$/.test(zipCodeValue)) {
+      setStoreSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setStoreSuggestionsLoading(true);
+      const response = await apiService.searchStores(zipCodeValue, storeInput);
+      if (!response.error && response.data) {
+        setStoreSuggestions(response.data);
+        setShowSuggestions(true);
+      } else {
+        setStoreSuggestions([]);
+        setShowSuggestions(storeInput.length >= 3);
+      }
+      setStoreSuggestionsLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [storeInput, zipCodeValue]);
+
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
@@ -41,8 +96,6 @@ export default function AuthPage() {
     const phoneNumber = formData.get('phoneNumber') as string;
     const email = formData.get('email') as string;
     const pin = formData.get('pin') as string;
-    const preferredStore = formData.get('preferredStore') as string;
-    const zipCode = formData.get('zipCode') as string;
 
     const nextErrors: RegisterFormErrors = {};
     if (!usPhoneRegex.test(phoneNumber)) {
@@ -54,7 +107,7 @@ export default function AuthPage() {
     if (!pinRegex.test(pin)) {
       nextErrors.pin = 'PIN must be exactly 4 digits';
     }
-    if (zipCode && !zipCodeRegex.test(zipCode.trim())) {
+    if (zipCodeValue && !zipCodeRegex.test(zipCodeValue.trim())) {
       nextErrors.zipCode = 'ZIP must be 12345 or 12345-6789';
     }
 
@@ -66,7 +119,7 @@ export default function AuthPage() {
 
     setRegisterErrors({});
 
-    const result = await apiService.register(phoneNumber, pin, email, preferredStore, zipCode);
+    const result = await apiService.register(phoneNumber, pin, email, selectedStore || storeInput, zipCodeValue);
 
     if (result.error) {
       toast.error(result.error);
@@ -260,25 +313,23 @@ export default function AuthPage() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="preferredStore">Preferred Store (Optional)</Label>
-                  <Input
-                    id="preferredStore"
-                    name="preferredStore"
-                    placeholder="e.g., Walmart, Target"
-                  />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="zipCode">ZIP Code (Optional)</Label>
                   <Input
                     id="zipCode"
                     name="zipCode"
                     placeholder="Enter your ZIP code"
                     inputMode="numeric"
-                    pattern="^\\d{5}(?:-\\d{4})?$"
+                    pattern="^\d{5}(?:-\d{4})?$"
                     title="Enter a valid US ZIP code (12345 or 12345-6789)"
                     maxLength={10}
+                    value={zipCodeValue}
                     aria-invalid={!!registerErrors.zipCode}
-                    onInput={() => {
+                    onChange={e => {
+                      setZipCodeValue(e.target.value);
+                      setStoreInput('');
+                      setSelectedStore('');
+                      setStoreSuggestions([]);
+                      setShowSuggestions(false);
                       if (registerErrors.zipCode) {
                         setRegisterErrors(prev => ({ ...prev, zipCode: undefined }));
                       }
@@ -286,6 +337,66 @@ export default function AuthPage() {
                   />
                   {registerErrors.zipCode && (
                     <p className="text-xs text-destructive">{registerErrors.zipCode}</p>
+                  )}
+                  {zipLocation && !registerErrors.zipCode && (
+                    <p className="text-xs text-gray-400">{zipLocation}</p>
+                  )}
+                </div>
+                <div className="space-y-2 relative">
+                  <Label htmlFor="preferredStore">Preferred Store (Optional)</Label>
+                  <Input
+                    id="preferredStore"
+                    placeholder={/^\d{5}$/.test(zipCodeValue) ? 'Type at least 3 characters...' : 'Enter ZIP code first'}
+                    disabled={!/^\d{5}$/.test(zipCodeValue)}
+                    value={storeInput}
+                    autoComplete="off"
+                    onChange={e => {
+                      setStoreInput(e.target.value);
+                      setSelectedStore('');
+                    }}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    onFocus={() => storeSuggestions.length > 0 && setShowSuggestions(true)}
+                  />
+                  {storeSuggestionsLoading && (
+                    <p className="text-xs text-muted-foreground">Searching nearby stores...</p>
+                  )}
+                  {selectedStore && (
+                    <p className="text-xs text-green-600">✓ {selectedStore}</p>
+                  )}
+                  {showSuggestions && storeSuggestions.length === 0 && !storeSuggestionsLoading && (
+                    <p className="text-xs text-muted-foreground">No stores found within 10 miles</p>
+                  )}
+                  {showSuggestions && storeSuggestions.length > 0 && (
+                    <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                      {storeSuggestions.map(store => (
+                        <li
+                          key={store._id || store.id}
+                          onMouseDown={() => {
+                            setStoreInput(store.name);
+                            setSelectedStore(store.name);
+                            setShowSuggestions(false);
+                          }}
+                          className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-blue-50 border-b border-gray-100 last:border-0"
+                        >
+                          <div className="mt-0.5 shrink-0">
+                            {store.logo && store.logo.startsWith('http') ? (
+                              <img src={store.logo} alt="" className="w-8 h-8 rounded object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            ) : (
+                              <span className="text-xl">🏪</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold text-gray-900 truncate">{store.name}</div>
+                            <div className="text-xs text-gray-500 truncate">{store.address}</div>
+                          </div>
+                          {store.distanceMiles != null && (
+                            <div className="shrink-0 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded mt-0.5">
+                              {store.distanceMiles} mi
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
