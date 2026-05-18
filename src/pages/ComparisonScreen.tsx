@@ -328,10 +328,24 @@ const ComparisonScreen = () => {
     return cheapest?.store.name || '';
   }, [cheapest?.store.name]);
 
-  const preferredStore = useMemo(
-    () => stores.find((s) => s.name === preferredStoreName),
-    [preferredStoreName, stores]
-  );
+  const preferredStore = useMemo(() => {
+    if (!preferredStoreName) return cheapest?.store;
+    // Exact match
+    const exact = stores.find((s) => s.name === preferredStoreName);
+    if (exact) return exact;
+    // Case-insensitive match
+    const lower = preferredStoreName.toLowerCase();
+    const caseMatch = stores.find((s) => s.name.toLowerCase() === lower);
+    if (caseMatch) return caseMatch;
+    // Partial match: preferred name contains DB name or vice versa
+    const partial = stores.find((s) => {
+      const sLower = s.name.toLowerCase();
+      return lower.includes(sLower) || sLower.includes(lower);
+    });
+    if (partial) return partial;
+    // No match in DB — fall back to cheapest store
+    return cheapest?.store;
+  }, [preferredStoreName, stores, cheapest]);
 
   const preferredStoreId = preferredStore?._id || String(preferredStore?.id || '');
   const bestSingleStore = useMemo(() => {

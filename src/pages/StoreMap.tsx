@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Component, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { APIProvider, Map, AdvancedMarker, InfoWindow } from '@vis.gl/react-google-maps';
+import { APIProvider, Map as GoogleMap, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { PriceObservation, Store } from '@/types';
 import { GOOGLE_MAPS_API_KEY } from '@/lib/maps-config';
 import { optimizeStopOrder, distanceBetween, RouteStop } from '@/lib/route-optimizer';
@@ -31,6 +31,43 @@ type StoreComparison = {
   store: Store;
   totalCost: number;
 };
+
+type MapErrorBoundaryProps = {
+  children: ReactNode;
+  fallbackProps: {
+    stores: Store[];
+    prices: PriceObservation[];
+    loading: boolean;
+    loadError: string | null;
+    userLocation: { lat: number; lng: number };
+    searchRadius: number;
+    highlightStoreIds: string[];
+  };
+};
+
+class MapErrorBoundary extends Component<MapErrorBoundaryProps, { hasError: boolean; errorMessage: string | null }> {
+  constructor(props: MapErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, errorMessage: null };
+  }
+
+  static getDerivedStateFromError(error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Unknown render error';
+    return { hasError: true, errorMessage: msg };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <StoreMapFallback
+          {...this.props.fallbackProps}
+          mapUnavailableReason={`Google Maps failed to render: ${this.state.errorMessage}. A valid Maps JavaScript API key with AdvancedMarker support is required.`}
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const StoreMap = () => {
   const location = useLocation();
@@ -147,16 +184,20 @@ const StoreMap = () => {
     );
   }
 
+  const fallbackProps = { stores, prices, loading, loadError, userLocation, searchRadius, highlightStoreIds };
+
   return (
-    <APIProvider
-      apiKey={GOOGLE_MAPS_API_KEY}
-      onError={(error) => {
-        console.error('Google Maps API failed to load', error);
-        setMapsLoadError('Google Maps JavaScript API is not enabled for this key. Showing fallback store locator.');
-      }}
-    >
-      <StoreMapWithGoogle stores={stores} prices={prices} loading={loading} loadError={loadError} userLocation={userLocation} searchRadius={searchRadius} highlightStoreIds={highlightStoreIds} autoShowRoute={autoShowRoute} onMapReady={() => setIsMapReady(true)} />
-    </APIProvider>
+    <MapErrorBoundary fallbackProps={fallbackProps}>
+      <APIProvider
+        apiKey={GOOGLE_MAPS_API_KEY}
+        onError={(error) => {
+          console.error('Google Maps API failed to load', error);
+          setMapsLoadError('Google Maps JavaScript API is not enabled for this key. Showing fallback store locator.');
+        }}
+      >
+        <StoreMapWithGoogle stores={stores} prices={prices} loading={loading} loadError={loadError} userLocation={userLocation} searchRadius={searchRadius} highlightStoreIds={highlightStoreIds} autoShowRoute={autoShowRoute} onMapReady={() => setIsMapReady(true)} />
+      </APIProvider>
+    </MapErrorBoundary>
   );
 };
 
@@ -184,6 +225,15 @@ const StoreMapWithGoogle = ({
 }) => {
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [showRoute, setShowRoute] = useState(autoShowRoute);
+  const map = useMap();
+
+  const locateStore = (store: Store) => {
+    setSelectedStore(store);
+    if (map && store.lat != null && store.lng != null) {
+      map.panTo({ lat: Number(store.lat), lng: Number(store.lng) });
+      map.setZoom(15);
+    }
+  };
 
   const visibleStores = useMemo(() => {
     const withinRadius = stores.filter(
@@ -297,10 +347,10 @@ const StoreMapWithGoogle = ({
 
       {/* Google Map */}
       <div className="rounded-2xl overflow-hidden border border-border mb-4" style={{ height: 320 }}>
-        <Map
+        <GoogleMap
           defaultCenter={userLocation}
           defaultZoom={12}
-          mapId="smartcart-map"
+          mapId="DEMO_MAP_ID"
           gestureHandling="greedy"
           disableDefaultUI
           zoomControl
@@ -332,9 +382,19 @@ const StoreMapWithGoogle = ({
                   } else {
                     markerClass = 'w-8 h-8 bg-card border-border text-base';
                   }
+                  const logoContent = store.logo?.startsWith('http') ? (
+                    <img
+                      src={store.logo}
+                      alt=""
+                      className="w-5 h-5 rounded-full object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  ) : (
+                    <span className="font-bold">{store.name.charAt(0)}</span>
+                  );
                   return (
                     <div className={`flex items-center justify-center rounded-full shadow-md border-2 transition-all ${markerClass}`}>
-                      {isOnRoute ? routeIdx + 1 : store.logo}
+                      {isOnRoute ? routeIdx + 1 : logoContent}
                     </div>
                   );
                 })()}
@@ -367,7 +427,7 @@ const StoreMapWithGoogle = ({
               </div>
             </InfoWindow>
           )}
-        </Map>
+        </GoogleMap>
       </div>
 
       {/* Optimized Route Card */}
@@ -394,7 +454,13 @@ const StoreMapWithGoogle = ({
                   )}
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-foreground">{stop.store.name}</p>
+                  <button
+                    type="button"
+                    onClick={() => locateStore(stop.store)}
+                    className="text-sm font-semibold text-primary underline-offset-2 hover:underline text-left"
+                  >
+                    {stop.store.name}
+                  </button>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {stop.items.map((item) => (
                       <span
@@ -438,8 +504,12 @@ const StoreMapWithGoogle = ({
               className={`ios-card flex items-center gap-3 tap-highlight ${isHighlighted ? 'border-2 border-primary/50 bg-primary/5' : ''}`}
               onClick={() => setSelectedStore(store)}
             >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl ${isHighlighted ? 'bg-primary/20' : 'bg-secondary'}`}>
-                {store.logo}
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden ${isHighlighted ? 'bg-primary/20' : 'bg-secondary'}`}>
+                {store.logo?.startsWith('http') ? (
+                  <img src={store.logo} alt="" className="w-8 h-8 object-contain" onError={(e) => { (e.target as HTMLImageElement).replaceWith(Object.assign(document.createElement('span'), { textContent: store.name.charAt(0), className: 'font-bold text-lg' })); }} />
+                ) : (
+                  <span className="font-bold text-lg">{store.name.charAt(0)}</span>
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -649,8 +719,12 @@ const StoreMapFallback = ({
               transition={{ delay: 0.1 + i * 0.05 }}
               className={`ios-card flex items-center gap-3 ${isHighlighted ? 'border-2 border-primary/50 bg-primary/5' : ''}`}
             >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl ${isHighlighted ? 'bg-primary/20' : 'bg-secondary'}`}>
-                {store.logo}
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden ${isHighlighted ? 'bg-primary/20' : 'bg-secondary'}`}>
+                {store.logo?.startsWith('http') ? (
+                  <img src={store.logo} alt="" className="w-8 h-8 object-contain" onError={(e) => { (e.target as HTMLImageElement).replaceWith(Object.assign(document.createElement('span'), { textContent: store.name.charAt(0), className: 'font-bold text-lg' })); }} />
+                ) : (
+                  <span className="font-bold text-lg">{store.name.charAt(0)}</span>
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
