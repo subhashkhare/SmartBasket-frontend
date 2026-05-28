@@ -236,7 +236,10 @@ const ScannerView = () => {
       {scanState !== 'done' && (
         <div className="mt-4">
           {/* Placeholder / preview box */}
-          <div className="relative w-full aspect-[3/4] rounded-2xl border-2 border-dashed border-border bg-muted/30 overflow-hidden flex items-center justify-center mb-4">
+          <div
+            className={`relative w-full aspect-[3/4] rounded-2xl border-2 border-dashed border-border bg-muted/30 overflow-hidden flex items-center justify-center mb-4${scanState === 'idle' ? ' cursor-pointer hover:border-primary/60 hover:bg-muted/50 transition-colors active:scale-[0.99]' : ''}`}
+            onClick={scanState === 'idle' ? () => cameraInputRef.current?.click() : undefined}
+          >
 
             {/* Idle: scanner graphic */}
             {scanState === 'idle' && (
@@ -250,7 +253,7 @@ const ScannerView = () => {
                 <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center">
                   <Camera size={36} className="text-primary" />
                 </div>
-                <p className="text-sm font-semibold text-foreground">Scan a receipt</p>
+                <p className="text-sm font-semibold text-foreground">Tap to scan a receipt</p>
                 <p className="text-xs text-muted-foreground text-center px-8">
                   Take a photo or upload an image to extract items and prices
                 </p>
@@ -307,22 +310,13 @@ const ScannerView = () => {
 
           {/* Buttons — only shown when idle */}
           {scanState === 'idle' && (
-            <div className="flex gap-3">
-              <button
-                onClick={() => cameraInputRef.current?.click()}
-                className="flex-1 h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.97] transition-transform"
-              >
-                <Camera size={18} />
-                Take Photo
-              </button>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-1 h-12 rounded-xl bg-secondary text-secondary-foreground font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.97] transition-transform"
-              >
-                <ImageIcon size={18} />
-                Upload
-              </button>
-            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full h-12 rounded-xl bg-secondary text-secondary-foreground font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.97] transition-transform"
+            >
+              <ImageIcon size={18} />
+              Upload Image
+            </button>
           )}
         </div>
       )}

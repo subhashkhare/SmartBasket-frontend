@@ -1,9 +1,6 @@
-import { motion } from 'framer-motion';
-import { ArrowRight, Store as StoreIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { RouteStop } from '@/lib/route-optimizer';
+import { useLocation } from 'react-router-dom';
 import { apiService } from '@/lib/api';
 import { PriceObservation, ShoppingListItem, Store } from '@/types';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -104,7 +101,6 @@ function matchPriceForShoppingItem(item: ShoppingListItem, prices: PriceObservat
 
 const ComparisonScreen = () => {
   const location = useLocation();
-  const navigate = useNavigate();
   const [mode, setMode] = useState<OptimizerMode>('one-stop');
   const [manualZip, setManualZip] = useState('');
   const [zipLocationName, setZipLocationName] = useState('');
@@ -114,9 +110,7 @@ const ComparisonScreen = () => {
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
 
-  const optimizedRoute = location.state?.optimizedRoute as RouteStop[] | undefined;
   const initialMode = location.state?.mode as OptimizerMode | undefined;
-  const routeStopsForView = optimizedRoute ?? [];
 
   useEffect(() => {
     if (initialMode) setMode(initialMode);
@@ -276,39 +270,6 @@ const ComparisonScreen = () => {
     }
   };
 
-  const openGoogleMapsStore = (store: Store) => {
-    const params = new URLSearchParams({ api: '1', query: `${store.lat},${store.lng}` });
-    const url = `https://www.google.com/maps/search/?${params.toString()}`;
-    window.open(url, '_blank');
-  };
-
-  const multiStopRouteStores = optimizedRoute
-    ? optimizedRoute.map((stop) => stop.store)
-    : sorted.slice(0, 2).map((comp) => comp.store);
-
-  // Unique stores from the Best Multi-Store Combo column, each with the items assigned to it
-  const multiStoreComboStops = useMemo(() => {
-    const storeItemsMap = new Map<string, { store: Store; items: string[] }>();
-
-    for (const { item, matchedPrice } of comparisonRows) {
-      if (!matchedPrice) continue;
-      const priceEntries = Object.entries(matchedPrice.prices || {})
-        .filter(([, v]) => Number(v) > 0)
-        .sort(([, a], [, b]) => Number(a) - Number(b));
-      if (priceEntries.length === 0) continue;
-
-      const cheapestStoreId = priceEntries[0][0];
-      const store = storeById.get(cheapestStoreId);
-      if (!store) continue;
-
-      if (!storeItemsMap.has(cheapestStoreId)) {
-        storeItemsMap.set(cheapestStoreId, { store, items: [] });
-      }
-      storeItemsMap.get(cheapestStoreId)!.items.push(item.name);
-    }
-
-    return Array.from(storeItemsMap.values());
-  }, [comparisonRows, storeById]);
 
   const preferredStoreName = useMemo(() => {
     try {
@@ -400,21 +361,6 @@ const ComparisonScreen = () => {
   }, [filteredPrices, sorted]);
 
   const effectiveBestStoreId = bestSingleStoreId || fallbackBestStoreId || '';
-  const ctaStoreIds = useMemo(() => {
-    const ids = (mode === 'multi-stop' ? multiStopRouteStores : sorted.slice(0, 3).map((comp) => comp.store))
-      .map((store) => store._id || String(store.id))
-      .filter((id) => id.length > 0);
-
-    if (ids.length > 0) return ids;
-    return effectiveBestStoreId ? [effectiveBestStoreId] : [];
-  }, [effectiveBestStoreId, mode, multiStopRouteStores, sorted]);
-
-  const openMapInNewTab = () => {
-    const state: Record<string, unknown> = {};
-    if (ctaStoreIds.length > 0) state.highlightStoreIds = ctaStoreIds;
-    if (mode === 'multi-stop') state.autoShowRoute = true;
-    navigate('/map', { state });
-  };
 
   const tableData: TableRowData[] = useMemo(() => {
     const effectiveBestStoreName = bestSingleStore?.store.name || storeById.get(effectiveBestStoreId)?.name || 'Best Store';
@@ -422,70 +368,63 @@ const ComparisonScreen = () => {
       if (!matchedPrice) {
         return {
           itemName: item.name,
-          preferredStore: { primary: '0', secondary: 'No price found for this item' },
-          oneStore: { primary: '0', secondary: 'No price found for this item' },
-          multiStore: { primary: '0', secondary: 'No nearby store price' },
+          preferredStore: { primary: '0', secondary: '' },
+          oneStore: { primary: '0', secondary: '' },
+          multiStore: { primary: '0', secondary: '' },
         };
       }
-
-      const row = matchedPrice;
-      const priceEntries = Object.entries(row.prices || {}).filter(([, value]) => Number(value) > 0);
-      const sortedEntries = [...priceEntries].sort((a, b) => Number(a[1]) - Number(b[1]));
-      const multiStoreBest = sortedEntries[0];
-      const preferredStorePrice = row.prices?.[preferredStoreId];
-      const oneStorePrice = row.prices?.[effectiveBestStoreId];
-      const multiStoreName = multiStoreBest ? storeById.get(multiStoreBest[0])?.name || 'Store' : 'Unavailable';
-      const multiStorePrice = Number(multiStoreBest?.[1] || 0);
-      const preferredStoreDisplay: PriceCell = preferredStorePrice === undefined
-        ? { primary: '0', secondary: `${preferredStore?.name || 'Preferred store'} unavailable` }
-        : { primary: `$${Number(preferredStorePrice).toFixed(2)}`, secondary: preferredStore?.name || 'Preferred store' };
-      const oneStoreDisplay: PriceCell = oneStorePrice === undefined
-        ? { primary: '0', secondary: `${effectiveBestStoreName} unavailable` }
-        : { primary: `$${Number(oneStorePrice).toFixed(2)}`, secondary: effectiveBestStoreName };
-      const multiStoreDisplay: PriceCell = multiStoreBest
-        ? { primary: `$${multiStorePrice.toFixed(2)}`, secondary: multiStoreName }
-        : { primary: '0', secondary: 'No store price' };
-
+      const preferredStorePrice = matchedPrice.prices?.[preferredStoreId];
+      const oneStorePrice = matchedPrice.prices?.[effectiveBestStoreId];
       return {
         itemName: item.name,
-        preferredStore: preferredStoreDisplay,
-        oneStore: oneStoreDisplay,
-        multiStore: multiStoreDisplay,
+        preferredStore: preferredStorePrice === undefined
+          ? { primary: '0', secondary: '' }
+          : { primary: `$${Number(preferredStorePrice).toFixed(2)}`, secondary: '' },
+        oneStore: oneStorePrice === undefined
+          ? { primary: '0', secondary: '' }
+          : { primary: `$${Number(oneStorePrice).toFixed(2)}`, secondary: effectiveBestStoreName },
+        multiStore: { primary: '0', secondary: '' },
       };
     });
-  }, [bestSingleStore, effectiveBestStoreId, comparisonRows, preferredStore, preferredStoreId, storeById]);
+  }, [bestSingleStore, effectiveBestStoreId, comparisonRows, preferredStoreId, storeById]);
 
   const totals = useMemo(() => {
     let preferred = 0;
     let oneStore = 0;
-    let multiStore = 0;
     let preferredComplete = true;
     let oneStoreComplete = true;
-
     for (const item of tableData) {
-      if (item.preferredStore.primary === '0') {
-        preferredComplete = false;
-      } else {
-        preferred += Number.parseFloat(item.preferredStore.primary.replace('$', '')) || 0;
-      }
-
-      if (item.oneStore.primary === '0') {
-        oneStoreComplete = false;
-      } else {
-        oneStore += Number.parseFloat(item.oneStore.primary.replace('$', '')) || 0;
-      }
-
-      if (item.multiStore.primary !== '0') {
-        multiStore += Number.parseFloat(item.multiStore.primary.replace('$', '')) || 0;
-      }
+      if (item.preferredStore.primary === '0') { preferredComplete = false; }
+      else { preferred += Number.parseFloat(item.preferredStore.primary.replace('$', '')) || 0; }
+      if (item.oneStore.primary === '0') { oneStoreComplete = false; }
+      else { oneStore += Number.parseFloat(item.oneStore.primary.replace('$', '')) || 0; }
     }
-
     return {
       preferred: preferredComplete ? preferred : null,
       oneStore: oneStoreComplete ? oneStore : null,
-      multiStore,
     };
   }, [tableData]);
+
+  const multiStoreTableData = useMemo(() => {
+    return comparisonRows.map(({ item, matchedPrice }) => {
+      if (!matchedPrice) return { itemName: item.name, price: '0', storeName: '—' };
+      const entries = Object.entries(matchedPrice.prices || {})
+        .filter(([, v]) => Number(v) > 0)
+        .sort(([, a], [, b]) => Number(a) - Number(b));
+      if (!entries.length) return { itemName: item.name, price: '0', storeName: '—' };
+      const [bestStoreId, bestPrice] = entries[0];
+      return {
+        itemName: item.name,
+        price: `$${Number(bestPrice).toFixed(2)}`,
+        storeName: storeById.get(bestStoreId)?.name || 'Unknown Store',
+      };
+    });
+  }, [comparisonRows, storeById]);
+
+  const multiStoreTotal = useMemo(() =>
+    multiStoreTableData.reduce((sum, row) =>
+      sum + (row.price === '0' ? 0 : Number(row.price.replace('$', '')) || 0), 0),
+  [multiStoreTableData]);
 
   let comparisonContent;
   if (shoppingListItems.length === 0) {
@@ -494,34 +433,23 @@ const ComparisonScreen = () => {
         <p className="text-center text-muted-foreground py-8">Add items to your shopping list to compare prices.</p>
       </div>
     );
-  } else if (tableData.length > 0) {
-    comparisonContent = (
+  } else if (mode === 'one-stop') {
+    comparisonContent = tableData.length > 0 ? (
       <div className="ios-card">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="text-left font-semibold">Items</TableHead>
-              <TableHead className="text-left font-semibold">Preferred Store</TableHead>
-              <TableHead className="text-left font-semibold">Best Single-Store Basket</TableHead>
-              <TableHead className="text-left font-semibold">Best Multi-Store Combo</TableHead>
+              <TableHead className="text-left font-semibold">{preferredStore?.name || 'Preferred Store'}</TableHead>
+              <TableHead className="text-left font-semibold">{bestSingleStore?.store.name || storeById.get(effectiveBestStoreId)?.name || 'Best Store'}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {tableData.map((row) => (
               <TableRow key={row.itemName}>
                 <TableCell className="font-medium">{row.itemName}</TableCell>
-                <TableCell>
-                  <div className="font-medium">{row.preferredStore.primary}</div>
-                  <div className="text-[10px] text-muted-foreground">{row.preferredStore.secondary}</div>
-                </TableCell>
-                <TableCell>
-                  <div className="font-medium">{row.oneStore.primary}</div>
-                  <div className="text-[10px] text-muted-foreground">{row.oneStore.secondary}</div>
-                </TableCell>
-                <TableCell>
-                  <div className="font-medium">{row.multiStore.primary}</div>
-                  <div className="text-[10px] text-muted-foreground">{row.multiStore.secondary}</div>
-                </TableCell>
+                <TableCell className="font-medium">{row.preferredStore.primary}</TableCell>
+                <TableCell className="font-medium">{row.oneStore.primary}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -530,15 +458,69 @@ const ComparisonScreen = () => {
               <TableCell className="font-bold">Total Cost</TableCell>
               <TableCell className="font-bold">{totals.preferred === null ? '0' : `$${totals.preferred.toFixed(2)}`}</TableCell>
               <TableCell className="font-bold">{totals.oneStore === null ? '0' : `$${totals.oneStore.toFixed(2)}`}</TableCell>
-              <TableCell className="font-bold">${totals.multiStore.toFixed(2)}</TableCell>
             </TableRow>
           </TableFooter>
         </Table>
         <p className="text-xs text-muted-foreground mt-3">0 : item not available in store</p>
       </div>
+    ) : (
+      <div className="ios-card">
+        <p className="text-center text-muted-foreground py-8">No comparison data available</p>
+      </div>
     );
   } else {
-    comparisonContent = (
+    comparisonContent = multiStoreTableData.length > 0 ? (
+      <div className="space-y-4">
+        {/* Per-item cheapest breakdown */}
+        <div className="ios-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-left font-semibold">Items</TableHead>
+                <TableHead className="text-left font-semibold">Price</TableHead>
+                <TableHead className="text-left font-semibold">Store</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {multiStoreTableData.map((row) => (
+                <TableRow key={row.itemName}>
+                  <TableCell className="font-medium">{row.itemName}</TableCell>
+                  <TableCell className="font-medium">{row.price}</TableCell>
+                  <TableCell className="font-medium">{row.storeName}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell className="font-bold">Total Cost</TableCell>
+                <TableCell className="font-bold">${multiStoreTotal.toFixed(2)}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableFooter>
+          </Table>
+          <p className="text-xs text-muted-foreground mt-3">0 : item not available in store</p>
+        </div>
+
+        {/* Total cost comparison across all strategies */}
+        <div className="ios-card">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Total Cost Comparison</p>
+          <div className="space-y-2">
+            {[
+              { label: preferredStore?.name || 'Preferred Store', value: totals.preferred, highlight: false },
+              { label: bestSingleStore?.store.name || storeById.get(effectiveBestStoreId)?.name || 'Best Single Store', value: totals.oneStore, highlight: false },
+              { label: 'Multi-Store', value: multiStoreTotal, highlight: true },
+            ].map(({ label, value, highlight }) => (
+              <div key={label} className={`flex items-center justify-between rounded-lg px-3 py-2 ${highlight ? 'bg-success/10' : 'bg-muted/40'}`}>
+                <span className={`text-sm font-medium ${highlight ? 'text-success' : 'text-foreground'}`}>{label}</span>
+                <span className={`text-sm font-bold ${highlight ? 'text-success' : 'text-foreground'}`}>
+                  {value === null ? '—' : `$${value.toFixed(2)}`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    ) : (
       <div className="ios-card">
         <p className="text-center text-muted-foreground py-8">No comparison data available</p>
       </div>
@@ -602,98 +584,6 @@ const ComparisonScreen = () => {
       </div>
 
       {comparisonContent}
-
-      <div className="flex flex-wrap gap-2 mb-3">
-        {sorted.slice(0, 3).map((comp) => (
-          <button
-            key={comp.store._id || String(comp.store.id)}
-            onClick={() => openGoogleMapsStore(comp.store)}
-            className="h-9 px-3 rounded-lg bg-secondary text-foreground text-xs font-medium hover:bg-secondary/80 transition"
-          >
-            Locate {comp.store.name}
-          </button>
-        ))}
-      </div>
-
-      
-
-      {mode === 'multi-stop' && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4">
-          <div className="ios-card border-2 border-success/40">
-            <div className="flex items-center gap-2 mb-3">
-              <StoreIcon size={16} className="text-success" />
-              <p className="text-sm font-semibold text-foreground">Optimal Multi-Stop Route</p>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 mb-4">
-              {multiStoreComboStops.length > 0 ? (
-                <>
-                  {multiStoreComboStops.slice(0, 3).map((stop, index, arr) => (
-                    <div key={stop.store._id || String(stop.store.id)} className="flex items-center gap-2 py-2 px-1 sm:flex-1 sm:min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center overflow-hidden">
-                        {stop.store.logo && stop.store.logo.startsWith('http') ? (
-                          <img src={stop.store.logo} alt="" className="w-6 h-6 object-contain" onError={(e) => { (e.target as HTMLImageElement).replaceWith(Object.assign(document.createTextNode('🏪'))); }} />
-                        ) : (
-                          <span className="text-lg">{stop.store.logo || '🏪'}</span>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-foreground truncate">{stop.store.name}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {stop.items.length} item{stop.items.length !== 1 ? 's' : ''}: {stop.items.join(', ')}
-                        </p>
-                      </div>
-                      {(index < arr.length - 1 || multiStoreComboStops.length > 3) && (
-                        <ArrowRight size={14} className="text-muted-foreground shrink-0 ml-1 sm:mx-2" />
-                      )}
-                    </div>
-                  ))}
-                  {multiStoreComboStops.length > 3 && (
-                    <div className="flex items-center self-center">
-                      <span className="text-sm font-semibold text-muted-foreground px-1">
-                        +{multiStoreComboStops.length - 3} more
-                      </span>
-                    </div>
-                  )}
-                </>
-              ) : routeStopsForView.length > 0 ? (
-                routeStopsForView.map((stop, index) => (
-                  <div key={stop.store._id || String(stop.store.id)} className="flex items-center gap-2 py-2 px-1 sm:flex-1 sm:min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-lg">
-                      {stop.store.logo || '🏪'}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">{stop.store.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{stop.items.length} item{stop.items.length !== 1 ? 's' : ''}</p>
-                    </div>
-                    {index < routeStopsForView.length - 1 && <ArrowRight size={14} className="text-muted-foreground ml-1 sm:mx-2" />}
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-muted-foreground py-2">No multi-store combo data available yet.</p>
-              )}
-            </div>
-            <div className="flex items-center justify-between pt-3 border-t border-border">
-              <div>
-                <p className="text-xs text-muted-foreground">Total Cost</p>
-                <p className="text-lg font-bold text-foreground">${totals.multiStore.toFixed(2)}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">You Save</p>
-                <p className="text-lg font-bold text-success">${Math.max(0, (totals.oneStore ?? totals.multiStore) - totals.multiStore).toFixed(2)}</p>
-              </div>
-            </div>
-          </div>
-
-        </motion.div>
-      )}
-      <button
-        onClick={openMapInNewTab}
-        disabled={shoppingListItems.length === 0}
-        className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2 tap-highlight active:scale-[0.97] transition-transform mt-5 mb-5"
-      >
-        <StoreIcon size={18} />
-        {mode === 'multi-stop' ? 'View Route on Map' : 'Show Stores in Map'}
-      </button>
     </div>
   );
 };
