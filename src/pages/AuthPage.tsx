@@ -14,6 +14,10 @@ type LoginFormErrors = {
   pin?: string;
 };
 
+type OtpFormErrors = {
+  otp?: string;
+};
+
 type RegisterFormErrors = {
   phoneNumber?: string;
   email?: string;
@@ -33,6 +37,8 @@ export default function AuthPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [loginErrors, setLoginErrors] = useState<LoginFormErrors>({});
   const [registerErrors, setRegisterErrors] = useState<RegisterFormErrors>({});
+  const [otpPhone, setOtpPhone] = useState<string | null>(null);
+  const [otpErrors, setOtpErrors] = useState<OtpFormErrors>({});
   const showLoginPrompt = searchParams.get('next') === 'login';
 
   const [zipCodeValue, setZipCodeValue] = useState('');
@@ -161,13 +167,98 @@ export default function AuthPage() {
     if (result.error) {
       toast.error(result.error);
     } else if (result.data) {
-      apiService.setToken(result.data.token);
+      if ('otpRequired' in result.data && result.data.otpRequired) {
+        setOtpPhone(result.data.phoneNumber);
+        toast.success('OTP sent to your WhatsApp. Enter it below.');
+      } else if ('token' in result.data) {
+        apiService.setToken(result.data.token);
+        toast.success('Login successful!');
+        globalThis.location.href = '/';
+      }
+    }
+
+    setIsLoading(false);
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    const formData = new FormData(e.currentTarget);
+    const otp = (formData.get('otp') as string).trim();
+
+    if (!/^\d{6}$/.test(otp)) {
+      setOtpErrors({ otp: 'Enter the 6-digit code sent to your WhatsApp' });
+      setIsLoading(false);
+      return;
+    }
+
+    setOtpErrors({});
+
+    const result = await apiService.verifyOtp(otpPhone!, otp);
+
+    if (result.error) {
+      toast.error(result.error);
+    } else if (result.data) {
       toast.success('Login successful!');
       globalThis.location.href = '/';
     }
 
     setIsLoading(false);
   };
+
+  if (otpPhone) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <Card className="w-full max-w-md">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl text-center">Verify Your Identity</CardTitle>
+            <CardDescription className="text-center">
+              A 6-digit code was sent to your WhatsApp number ending in{' '}
+              <span className="font-semibold text-foreground">
+                ···{otpPhone.slice(-4)}
+              </span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleVerifyOtp} className="space-y-4" noValidate>
+              <div className="space-y-2">
+                <Label htmlFor="otp">Verification Code</Label>
+                <Input
+                  id="otp"
+                  name="otp"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Enter 6-digit code"
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  aria-invalid={!!otpErrors.otp}
+                  onInput={e => {
+                    e.currentTarget.value = e.currentTarget.value.replace(/\D/g, '').slice(0, 6);
+                    if (otpErrors.otp) setOtpErrors({});
+                  }}
+                  required
+                />
+                {otpErrors.otp && (
+                  <p className="text-xs text-destructive">{otpErrors.otp}</p>
+                )}
+              </div>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? 'Verifying...' : 'Verify & Login'}
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setOtpPhone(null); setOtpErrors({}); }}
+                className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors text-center"
+              >
+                ← Back to login
+              </button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">

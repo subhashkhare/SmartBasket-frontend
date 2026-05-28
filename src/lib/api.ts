@@ -27,6 +27,13 @@ interface AuthResponse {
   };
 }
 
+interface LoginOtpResponse {
+  otpRequired: true;
+  phoneNumber: string;
+}
+
+type LoginResponse = AuthResponse | LoginOtpResponse;
+
 type ProfileUpdateUser = AuthResponse['user'] & {
   saveMode?: 'remote' | 'fallback';
 };
@@ -446,7 +453,7 @@ class ApiService {
     };
   }
 
-  async login(phoneNumber: string, pin: string): Promise<ApiResponse<AuthResponse>> {
+  async login(phoneNumber: string, pin: string): Promise<ApiResponse<LoginResponse>> {
     if (!this.isValidPin(pin)) {
       return { error: 'PIN must be exactly 4 digits', errorType: 'http' };
     }
@@ -456,20 +463,13 @@ class ApiService {
       return { error: 'Phone number must be a valid US 10-digit number', errorType: 'http' };
     }
 
-    const response = await this.request<AuthResponse>('/auth/login', {
+    const response = await this.request<LoginResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ phoneNumber: normalizedPhoneNumber, pin }),
     });
-    console.log('Login response:', response);
+
     if (!response.error) {
-      if (response.data?.token) {
-        this.setToken(response.data.token);
-      }
-      if (response.data?.user) {
-        this.persistActiveUserSession(response.data.user);
-        this.syncStoredProfileFields({ pin }, response.data.user);
-      }
-      void this.flushPendingRegistrations();
+      // OTP flow: backend returned { otpRequired: true } — do not set token yet
       return response;
     }
 
@@ -477,44 +477,45 @@ class ApiService {
       return response;
     }
 
-    // Fallback to localStorage if backend is unavailable
+    // Offline fallback — no OTP in offline mode
     console.warn('Backend unavailable, using localStorage for login');
-
-    // LocalStorage fallback
     const users = this.getFallbackUsers();
-    console.log('Offline users count from localStorage:', users.length);
-    if (users.length === 0) {
-      return { error: 'Invalid credentials' };
-    }
+    if (users.length === 0) return { error: 'Invalid credentials' };
 
     const user = users.find(entry => this.normalizePhoneNumber(entry.phoneNumber) === normalizedPhoneNumber);
-    if (!user) {
-      return { error: 'Invalid credentials' };
-    }
-
-    console.log('Comparing normalized phone:', this.normalizePhoneNumber(user.phoneNumber), 'vs', normalizedPhoneNumber);
-    console.log('Comparing pin:', user.pin, 'vs', pin);
-    if (user.pin !== pin) {
-      return { error: 'Invalid credentials' };
-    }
+    if (!user) return { error: 'Invalid credentials' };
+    if (user.pin !== pin) return { error: 'Invalid credentials' };
 
     const mockToken = 'local-' + Date.now();
-    const data = {
-      data: {
-        token: mockToken,
-        user: {
-          id: 'local-' + normalizedPhoneNumber,
-          phoneNumber: normalizedPhoneNumber,
-          email: user.email,
-          preferredStore: user.preferredStore,
-          zipCode: user.zipCode,
-        },
-      },
+    const offlineUser = {
+      id: 'local-' + normalizedPhoneNumber,
+      phoneNumber: normalizedPhoneNumber,
+      email: user.email,
+      preferredStore: user.preferredStore,
+      zipCode: user.zipCode,
     };
-
     this.setToken(mockToken);
-    this.persistActiveUserSession(data.data.user);
-    return data;
+    this.persistActiveUserSession(offlineUser);
+    this.syncStoredProfileFields({ pin }, offlineUser);
+    return { data: { token: mockToken, user: offlineUser } };
+  }
+
+  async verifyOtp(phoneNumber: string, otp: string): Promise<ApiResponse<AuthResponse>> {
+    const response = await this.request<AuthResponse>('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber, otp }),
+    });
+
+    if (!response.error) {
+      if (response.data?.token) this.setToken(response.data.token);
+      if (response.data?.user) {
+        this.persistActiveUserSession(response.data.user);
+        this.syncStoredProfileFields({}, response.data.user);
+      }
+      void this.flushPendingRegistrations();
+    }
+
+    return response;
   }
 
   private toSafeString(value: unknown): string {
