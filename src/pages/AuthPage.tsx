@@ -291,7 +291,7 @@ export default function AuthPage() {
                     type="tel"
                     placeholder="Enter your phone number"
                     inputMode="tel"
-                    pattern="^(?:\\+1[\\s.-]?)?(?:\\(\\d{3}\\)|\\d{3})[\\s.-]?\\d{3}[\\s.-]?\\d{4}$"
+                    pattern="^(?:\+1[ \.-]?)?(?:\(\d{3}\)|\d{3})[ \.-]?\d{3}[ \.-]?\d{4}$"
                     title="Enter a valid US phone number"
                     aria-invalid={!!loginErrors.phoneNumber}
                     onInput={() => {
@@ -345,7 +345,7 @@ export default function AuthPage() {
                     type="tel"
                     placeholder="Enter your phone number"
                     inputMode="tel"
-                    pattern="^(?:\\+1[\\s.-]?)?(?:\\(\\d{3}\\)|\\d{3})[\\s.-]?\\d{3}[\\s.-]?\\d{4}$"
+                    pattern="^(?:\+1[ \.-]?)?(?:\(\d{3}\)|\d{3})[ \.-]?\d{3}[ \.-]?\d{4}$"
                     title="Enter a valid US phone number"
                     aria-invalid={!!registerErrors.phoneNumber}
                     onInput={() => {
