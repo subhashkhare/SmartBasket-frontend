@@ -1,5 +1,28 @@
 import { useState, useRef, useCallback } from "react";
 
+const CLAUDE_API_KEY = import.meta.env.VITE_CLAUDE_API_KEY as string;
+
+async function compressToBase64(dataUrl: string): Promise<{ base64: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1500;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width >= height) { height = Math.round((height * MAX) / width); width = MAX; }
+        else { width = Math.round((width * MAX) / height); height = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      const compressed = canvas.toDataURL("image/jpeg", 0.82);
+      resolve({ base64: compressed.replace(/^data:image\/jpeg;base64,/, ""), mimeType: "image/jpeg" });
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Category =
@@ -520,10 +543,10 @@ export default function ReceiptScanner(): JSX.Element {
   const loadFile = (file: File | undefined): void => {
     if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
-    reader.onload = (e: ProgressEvent<FileReader>) => {
+    reader.onload = async (e: ProgressEvent<FileReader>) => {
       const dataUrl = e.target?.result as string;
-      const base64 = dataUrl.split(",")[1];
-      setImage({ file, dataUrl, base64, mimeType: file.type });
+      const { base64, mimeType } = await compressToBase64(dataUrl);
+      setImage({ file, dataUrl, base64, mimeType });
       setStatus("idle");
       setResult(null);
       setError(null);
@@ -550,10 +573,15 @@ export default function ReceiptScanner(): JSX.Element {
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": CLAUDE_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-client-side-api-key-accesss": "true",
+        },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1024,
           system: SYSTEM_PROMPT,
           messages: [
             {
@@ -685,7 +713,6 @@ export default function ReceiptScanner(): JSX.Element {
                   type="button"
                   className="analyze-btn"
                   onClick={analyze}
-                  disabled={status === "analyzing"}
                 >
                   ⚡ Analyze Receipt
                 </button>

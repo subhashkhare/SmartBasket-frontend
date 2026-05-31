@@ -198,19 +198,12 @@ export async function extractReceiptWithClaude(
 
     onProgress?.(50);
 
-    // Detect actual image format so Claude receives the correct media type
-    const mediaType = ((): 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' => {
-      if (image instanceof File) {
-        if (image.type === 'image/png') return 'image/png';
-        if (image.type === 'image/webp') return 'image/webp';
-        if (image.type === 'image/gif') return 'image/gif';
-      }
-      return 'image/jpeg';
-    })();
+    // convertImageToBase64 always outputs JPEG after canvas compression
+    const mediaType = 'image/jpeg' as const;
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
       messages: [
         {
           role: 'user',
@@ -330,27 +323,37 @@ export async function extractReceiptWithClaude(
  */
 async function convertImageToBase64(image: File | Blob | string): Promise<string> {
   let blob: Blob;
-
   if (typeof image === 'string') {
-    // Assume it's a data URL or file path
     const response = await fetch(image);
     blob = await response.blob();
-  } else if (image instanceof File) {
-    blob = image;
   } else {
     blob = image;
   }
 
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // Remove data URL prefix if present
-      const base64 = result.replace(/^data:image\/[a-z]+;base64,/, '');
-      resolve(base64);
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX = 1500;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width >= height) {
+          height = Math.round((height * MAX) / width);
+          width = MAX;
+        } else {
+          width = Math.round((width * MAX) / height);
+          height = MAX;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82).replace(/^data:image\/jpeg;base64,/, ''));
     };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
+    img.onerror = reject;
+    img.src = url;
   });
 }
 
