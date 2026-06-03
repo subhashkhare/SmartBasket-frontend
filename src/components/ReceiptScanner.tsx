@@ -526,8 +526,12 @@ Extract ALL information and return ONLY valid JSON (no markdown, no explanation)
 
 Rules:
 - All prices as floats with 2 decimal places
-- If a value is not visible, use null
-- item.total_price is mandatory; estimate from qty * unit_price if needed
+- item.total_price is mandatory for every item
+- item.quantity: if not printed, default to 1
+- item.unit_price: if not printed, compute as total_price / quantity (never leave null when total_price and quantity are known)
+- For weighted items (e.g. "0.5 lb @ $1.99/lb"): quantity = weight (0.5), unit_price = price per lb (1.99)
+- For multi-pack items (e.g. "3 x $0.99"): quantity = 3, unit_price = 0.99
+- For other fields not visible on the receipt, use null
 - Return ONLY the JSON object, nothing else`;
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -612,6 +616,17 @@ export default function ReceiptScanner(): JSX.Element {
         data.content?.map((b: { text?: string }) => b.text ?? "").join("") ?? "";
       const clean = text.replace(/```json|```/g, "").trim();
       const parsed: ReceiptData = JSON.parse(clean);
+      // Derive missing unit prices client-side as a safety net
+      parsed.items = (parsed.items ?? []).map((item) => {
+        const qty = item.quantity ?? 1;
+        const unitPrice =
+          item.unit_price != null
+            ? item.unit_price
+            : item.total_price != null
+            ? parseFloat((item.total_price / qty).toFixed(2))
+            : null;
+        return { ...item, quantity: qty, unit_price: unitPrice };
+      });
       setResult(parsed);
       setStatus("done");
     } catch (err: unknown) {
@@ -797,8 +812,8 @@ export default function ReceiptScanner(): JSX.Element {
                       <th>Item</th>
                       <th>Category</th>
                       <th>Qty</th>
-                      <th>Unit</th>
-                      <th>Total</th>
+                      <th>Unit Price</th>
+                      <th>Total Price</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -87,6 +87,20 @@ const ScannerView = () => {
       r && { ...r, items: r.items.map((i) => (i.id === id ? { ...i, name: val } : i)) }
     );
 
+  const updateItemQuantity = (id: string, val: string) => {
+    const numericQty = parseFloat(val) || 1;
+    setReceipt((r) =>
+      r && {
+        ...r,
+        items: r.items.map((i) =>
+          i.id === id
+            ? { ...i, quantityLabel: val, quantity: numericQty, totalPrice: parseFloat((i.unitPrice * numericQty).toFixed(2)) }
+            : i
+        ),
+      }
+    );
+  };
+
   const updateItemPrice = (id: string, val: string) => {
     const price = parseFloat(val) || 0;
     setReceipt((r) =>
@@ -95,7 +109,7 @@ const ScannerView = () => {
         ...r,
         items: r.items.map((i) =>
           i.id === id
-            ? { ...i, unitPrice: price, totalPrice: price * i.quantity }
+            ? { ...i, unitPrice: price, totalPrice: parseFloat((price * i.quantity).toFixed(2)) }
             : i
         ),
       }
@@ -109,6 +123,7 @@ const ScannerView = () => {
     const blank: ParsedReceiptItem = {
       id: `manual-${Date.now()}`,
       name: '',
+      quantityLabel: '1',
       quantity: 1,
       unitPrice: 0,
       totalPrice: 0,
@@ -332,7 +347,7 @@ const ScannerView = () => {
                 value={receipt.storeName || ''}
                 onChange={(e) => updateStoreName(e.target.value)}
                 placeholder="Store name"
-                className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground w-full"
+                className="rounded-lg border border-input bg-background px-3 py-2 text-[0.7rem] text-foreground w-full"
               />
             </div>
             <div className="grid grid-cols-[90px_1fr] items-center gap-3">
@@ -341,7 +356,7 @@ const ScannerView = () => {
                 value={receipt.zipCode || ''}
                 onChange={(e) => updateZipCode(e.target.value)}
                 placeholder="Zip code"
-                className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground w-full"
+                className="rounded-lg border border-input bg-background px-3 py-2 text-[0.7rem] text-foreground w-full"
               />
             </div>
           </div>
@@ -355,7 +370,9 @@ const ScannerView = () => {
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left text-xs text-muted-foreground font-medium pb-2 pr-2">Item Name</th>
-                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 w-24">Price ($)</th>
+                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 w-16">Qty</th>
+                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 w-24">Price/Unit</th>
+                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 w-24">Total Price</th>
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -367,7 +384,16 @@ const ScannerView = () => {
                         value={item.name}
                         onChange={(e) => updateItemName(item.id, e.target.value)}
                         placeholder="Item name"
-                        className="w-full rounded border border-input bg-background px-2 py-1 text-sm text-foreground"
+                        className="w-full rounded border border-input bg-background px-2 py-1 text-[0.7rem] text-foreground"
+                      />
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <input
+                        type="text"
+                        value={item.quantityLabel ?? String(item.quantity)}
+                        onChange={(e) => updateItemQuantity(item.id, e.target.value)}
+                        placeholder="1"
+                        className="w-full rounded border border-input bg-background px-2 py-1 text-[0.7rem] text-foreground text-right"
                       />
                     </td>
                     <td className="py-1.5 pr-2">
@@ -378,8 +404,11 @@ const ScannerView = () => {
                         value={item.unitPrice || ''}
                         onChange={(e) => updateItemPrice(item.id, e.target.value)}
                         placeholder="0.00"
-                        className="w-full rounded border border-input bg-background px-2 py-1 text-sm text-foreground text-right"
+                        className="w-full rounded border border-input bg-background px-2 py-1 text-[0.7rem] text-foreground text-right"
                       />
+                    </td>
+                    <td className="py-1.5 pr-2 text-right text-[0.7rem] font-medium text-foreground whitespace-nowrap">
+                      ${item.totalPrice.toFixed(2)}
                     </td>
                     <td className="py-1.5 text-right">
                       <button

@@ -8,6 +8,7 @@ export interface ParsedReceiptItem {
   id: string;
   name: string;
   quantity: number;
+  quantityLabel: string;
   unitPrice: number;
   totalPrice: number;
   confidence: number;
@@ -99,12 +100,17 @@ function parseClaudeResponse(responseText: string): any {
       dateTime: parsed.dateTime || fallback.dateTime,
       coordinates: parsed.coordinates || fallback.coordinates,
       items: Array.isArray(parsed.items)
-        ? parsed.items.map((item: any) => ({
-            name: item.name || 'Unknown Item',
-            quantity: item.quantity ? Number(item.quantity) : 1,
-            unitPrice: item.unitPrice ? Number(item.unitPrice) : 0,
-            totalPrice: item.totalPrice ? Number(item.totalPrice) : 0,
-          }))
+        ? parsed.items.map((item: any) => {
+            const qty = Math.max(0.001, Number(item.quantity) || 1);
+            const total = Number(item.totalPrice) || 0;
+            return {
+              name: item.name || 'Unknown Item',
+              quantityLabel: item.quantityLabel || String(item.quantity ?? 1),
+              quantity: qty,
+              unitPrice: parseFloat((total / qty).toFixed(2)),
+              totalPrice: total,
+            };
+          })
         : fallback.items,
       subtotal: parsed.subtotal ? Number(parsed.subtotal) : fallback.subtotal,
       tax: parsed.tax ? Number(parsed.tax) : fallback.tax,
@@ -157,6 +163,7 @@ function parseClaudeResponse(responseText: string): any {
         }
         fallback.items.push({
           name: itemName,
+          quantityLabel: '1',
           quantity: 1,
           unitPrice: price,
           totalPrice: price,
@@ -231,6 +238,7 @@ export async function extractReceiptWithClaude(
   "items": [
     {
       "name": "Item name",
+      "quantityLabel": "1",
       "quantity": 1,
       "unitPrice": 0.00,
       "totalPrice": 0.00
@@ -241,8 +249,13 @@ export async function extractReceiptWithClaude(
   "total": 0.00
 }
 
-- List grocery items with price per unit.
-- If quantity is not shown, use 1.
+- Every item must have quantityLabel, quantity, unitPrice, and totalPrice.
+- quantityLabel: human-readable string shown on the receipt or in the item name — e.g. "400 g", "1 kg", "4 lb", "1.43 lb", "2". For a plain single unit with no weight/count, use "1".
+- quantity: numeric value for calculation — weight or count as a number (e.g. 1.43 for "1.43 lb", 2 for "2 units", 1 for a single package regardless of package weight).
+- unitPrice: price per unit/lb/kg. If not printed, compute as totalPrice / quantity (never leave 0 when total is known).
+- For weighted items (e.g. "1.43 lb @ $0.99/lb"): quantityLabel="1.43 lb", quantity=1.43, unitPrice=0.99.
+- For package-weight items (e.g. "ITEM 400G $4.49"): quantityLabel="400 g", quantity=1, unitPrice=totalPrice.
+- For multi-pack items (e.g. "2 WHEAT ROTI 10CT $4.99 each"): quantityLabel="2", quantity=2, unitPrice=4.99.
 - Extract store name, address, ZIP, phone, date & time, and coordinates.
 - Return valid JSON only, nothing else.`,
             },
@@ -287,14 +300,19 @@ export async function extractReceiptWithClaude(
       date: parsedData.dateTime ? parsedData.dateTime : new Date().toISOString().split('T')[0],
       dateTime: parsedData.dateTime || '',
       coordinates: parsedData.coordinates || '',
-      items: (parsedData.items || []).map((item: any, index: number) => ({
-        id: `item-${index + 1}`,
-        name: item.name || 'Unknown Item',
-        quantity: Math.max(1, parseInt(item.quantity) || 1),
-        unitPrice: parseFloat(item.unitPrice) || 0,
-        totalPrice: parseFloat(item.totalPrice) || 0,
-        confidence: 0.95, // Higher confidence for Claude extraction
-      })),
+      items: (parsedData.items || []).map((item: any, index: number) => {
+        const qty = Math.max(0.001, parseFloat(item.quantity) || 1);
+        const total = parseFloat(item.totalPrice) || 0;
+        return {
+          id: `item-${index + 1}`,
+          name: item.name || 'Unknown Item',
+          quantityLabel: item.quantityLabel || String(item.quantity ?? 1),
+          quantity: qty,
+          unitPrice: parseFloat((total / qty).toFixed(2)),
+          totalPrice: total,
+          confidence: 0.95,
+        };
+      }),
       subtotal: parsedData.subtotal || 0,
       tax: 0, // Not extracted in new prompt
       total: parsedData.total || 0,
@@ -480,6 +498,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     items.push({
       id: `item-${++idCounter}`,
       name: cleanItemName(name),
+      quantityLabel: String(quantity),
       quantity,
       unitPrice: price / quantity,
       totalPrice: price,
