@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShoppingListItem } from '@/types';
 import { apiService } from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Check, MapPin, Trash2, ShoppingCart } from 'lucide-react';
+import { Check, MapPin, Trash2, ShoppingCart } from 'lucide-react';
 
 const SHOPPING_LIST_SESSION_KEY = 'smartCartShoppingListSession';
 
@@ -101,8 +101,14 @@ const ShoppingList = () => {
   };
 
   const applySuggestion = (suggestion: CatalogSuggestion) => {
-    setNewItem(suggestion.name);
-    setSelectedSuggestion(suggestion);
+    setItems(prev => [...prev, {
+      id: createShoppingItemId(),
+      name: suggestion.name,
+      sourceItemId: suggestion.id,
+      quantity: 1,
+      checked: false,
+    }]);
+    setNewItem('');
     setShowSuggestions(false);
   };
 
@@ -167,12 +173,6 @@ const ShoppingList = () => {
             </div>
           )}
         </div>
-        <button
-          onClick={addItem}
-          className="w-11 h-11 rounded-xl bg-primary flex items-center justify-center tap-highlight active:scale-[0.95] transition-transform"
-        >
-          <Plus size={20} className="text-primary-foreground" />
-        </button>
       </div>
 
       {/* Unchecked items */}

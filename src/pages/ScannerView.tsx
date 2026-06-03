@@ -11,6 +11,9 @@ import { apiService } from '@/lib/api';
 
 type ScanState = 'idle' | 'processing' | 'done';
 
+const toTitleCase = (str: string) =>
+  str.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
 // Circumference of the SVG progress ring (r=36)
 const RING_CIRCUMFERENCE = 2 * Math.PI * 36;
 
@@ -49,6 +52,14 @@ const ScannerView = () => {
         const inferredZip = await inferZipCodeFromAddress(parsed.storeAddress);
         if (inferredZip) parsed.zipCode = inferredZip;
       }
+
+      // Normalise to Title Case for display
+      parsed.storeName = toTitleCase(parsed.storeName || '');
+      parsed.storeAddress = toTitleCase(parsed.storeAddress || '');
+      parsed.items = parsed.items.map((item) => ({
+        ...item,
+        name: toTitleCase(item.name || ''),
+      }));
 
       setReceipt(parsed);
       setScanState('done');
@@ -135,9 +146,9 @@ const ScannerView = () => {
   const buildChainId = (storeName: string) =>
     String(storeName || '')
       .toLowerCase()
-      .replaceAll(/[^a-z0-9\s-]/g, '')
+      .replace(/[^a-z0-9\s-]/g, '')
       .trim()
-      .replaceAll(/\s+/g, '-') || `store-${Date.now()}`;
+      .replace(/\s+/g, '-') || `store-${Date.now()}`;
 
   const resolveStoreId = async (): Promise<string> => {
     if (!receipt) throw new Error('No receipt data');
@@ -176,23 +187,18 @@ const ScannerView = () => {
     return createResult.data._id;
   };
 
-  const getUserKey = (): string => {
-    try {
-      const s = localStorage.getItem('smartCartSession') || localStorage.getItem('smartCartUser');
-      if (s) {
-        const p = JSON.parse(s);
-        return p.phoneNumber || p.id || p.email || 'unknown';
-      }
-    } catch {}
-    return 'unknown';
-  };
-
   const handleSave = async () => {
     if (!receipt) return;
 
     const validItems = receipt.items
-      .map((i) => ({ itemName: String(i.name || '').trim(), unitPrice: Number(i.unitPrice || 0) }))
-      .filter((i) => i.itemName.length > 0 && i.unitPrice > 0);
+      .filter((i) => String(i.name || '').trim().length > 0 && i.unitPrice > 0)
+      .map((i) => ({
+        itemName:      String(i.name).trim().toLowerCase(),
+        quantity:      Number(i.quantity) || 1,
+        quantityLabel: i.quantityLabel ?? String(i.quantity ?? 1),
+        unitPrice:     parseFloat(Number(i.unitPrice).toFixed(2)),
+        totalPrice:    parseFloat(Number(i.totalPrice).toFixed(2)),
+      }));
 
     if (validItems.length === 0) {
       setError('Add at least one item with a name and price.');
@@ -205,33 +211,24 @@ const ScannerView = () => {
       setSaveMessage(null);
       setDuplicateAlert(false);
 
-      const receiptDate = receipt.dateTime || receipt.date || null;
       const storeId = await resolveStoreId();
-      const result = await apiService.upsertReceiptItemsByStore(storeId, validItems, receiptDate);
+      const receiptDate = receipt.dateTime || receipt.date || null;
+      const receiptTotal = receipt.total || validItems.reduce((s, i) => s + i.totalPrice, 0);
+
+      const result = await apiService.saveReceipt({
+        storeId,
+        storeName: (receipt.storeName || 'unknown store').toLowerCase(),
+        receiptDate,
+        items: validItems,
+        subtotal: receipt.subtotal || 0,
+        tax:      receipt.tax      || 0,
+        total:    receiptTotal,
+      });
+
       if (result.error) { setError(result.error); return; }
+      if (result.data?.alreadyExists) { setDuplicateAlert(true); return; }
 
-      if (result.data?.alreadyExists) {
-        setDuplicateAlert(true);
-        return;
-      }
-
-      // Save to local receipt history
-      try {
-        const HISTORY_KEY = 'smartCartReceiptHistory';
-        const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-        history.push({
-          id: `receipt-${Date.now()}`,
-          userKey: getUserKey(),
-          storeName: receipt.storeName || 'Unknown Store',
-          date: new Date().toISOString().slice(0, 10),
-          total: receipt.items.reduce((s, i) => s + i.totalPrice, 0),
-          savings: 0,
-          status: 'verified',
-        });
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-      } catch {}
-
-      setSaveMessage(`Saved ${result.data?.updated ?? 0} items successfully.`);
+      setSaveMessage(`Saved ${validItems.length} items successfully.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {

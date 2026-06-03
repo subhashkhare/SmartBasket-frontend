@@ -245,7 +245,7 @@ const SettingsPage = () => {
         )}
       </div>
 
-      <p className="section-title">Memberships</p>
+      {/* <p className="section-title">Memberships</p>
       <div className="ios-card mb-5 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -261,7 +261,7 @@ const SettingsPage = () => {
           </div>
           <Toggle checked={samsMember} onChange={setSamsMember} />
         </div>
-      </div>
+      </div> */}
 
       {/* Preferences */}
       <p className="section-title">Preferences</p>
@@ -303,7 +303,7 @@ const SettingsPage = () => {
       </div>
 
       {/* Sign Out */}
-      <motion.button
+      {/* <motion.button
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
@@ -312,7 +312,7 @@ const SettingsPage = () => {
       >
         <LogOut size={18} />
         Sign Out
-      </motion.button>
+      </motion.button> */}
 
       <p className="text-center text-[10px] text-muted-foreground mt-6">SmartCart US v1.0 · Made with 🛒</p>
     </div>

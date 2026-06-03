@@ -78,6 +78,25 @@ interface ReceiptPriceItemPayload {
   unitPrice: number;
 }
 
+interface ReceiptItemPayload {
+  itemId?: string;
+  itemName: string;
+  quantity: number;
+  quantityLabel: string;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+interface SaveReceiptPayload {
+  storeId: string;
+  storeName: string;
+  receiptDate: string | null;
+  items: ReceiptItemPayload[];
+  subtotal: number;
+  tax: number;
+  total: number;
+}
+
 type ProfileUpdateApiPayload = { user?: AuthResponse['user'] } | AuthResponse['user'];
 
 type StoredSessionUser = AuthResponse['user'] & {
@@ -678,6 +697,16 @@ class ApiService {
     } catch {
       return 'unknown';
     }
+  }
+
+  async saveReceipt(
+    payload: SaveReceiptPayload,
+  ): Promise<ApiResponse<{ receipt?: unknown; updated?: number; alreadyExists?: boolean }>> {
+    const userId = this.getCurrentUserId();
+    return this.request('/receipts', {
+      method: 'POST',
+      body: JSON.stringify({ ...payload, userId }),
+    });
   }
 
   async upsertReceiptItemsByStore(

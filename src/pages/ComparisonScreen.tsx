@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useLocation } from 'react-router-dom';
 import { apiService } from '@/lib/api';
 import { PriceObservation, ShoppingListItem, Store } from '@/types';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-type OptimizerMode = 'one-stop' | 'multi-stop';
-
 type StoreComparison = { store: Store; totalCost: number; coveredItemCount: number; isComplete: boolean };
-type PriceCell = { primary: string; secondary: string };
-type TableRowData = { itemName: string; preferredStore: PriceCell; oneStore: PriceCell; multiStore: PriceCell };
+type UnifiedRow = {
+  itemName: string;
+  preferredPrice: string;
+  oneStorePrice: string;
+  multiShopPrice: string;
+  multiShopStore: string;
+};
 
 const SHOPPING_LIST_SESSION_KEY = 'smartCartShoppingListSession';
 const DEFAULT_SEARCH_RADIUS = 10;
@@ -100,8 +102,6 @@ function matchPriceForShoppingItem(item: ShoppingListItem, prices: PriceObservat
 }
 
 const ComparisonScreen = () => {
-  const location = useLocation();
-  const [mode, setMode] = useState<OptimizerMode>('one-stop');
   const [manualZip, setManualZip] = useState('');
   const [zipLocationName, setZipLocationName] = useState('');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -109,12 +109,6 @@ const ComparisonScreen = () => {
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-
-  const initialMode = location.state?.mode as OptimizerMode | undefined;
-
-  useEffect(() => {
-    if (initialMode) setMode(initialMode);
-  }, [initialMode]);
 
   const { data: storesResp, isLoading: storesLoading } = useQuery({
     queryKey: ['stores'],
@@ -362,170 +356,47 @@ const ComparisonScreen = () => {
 
   const effectiveBestStoreId = bestSingleStoreId || fallbackBestStoreId || '';
 
-  const tableData: TableRowData[] = useMemo(() => {
-    const effectiveBestStoreName = bestSingleStore?.store.name || storeById.get(effectiveBestStoreId)?.name || 'Best Store';
+  const preferredStoreName_col = preferredStore?.name || 'Preferred Store';
+  const oneStoreName_col = bestSingleStore?.store.name || storeById.get(effectiveBestStoreId)?.name || 'Best Store';
+
+  const unifiedRows: UnifiedRow[] = useMemo(() => {
     return comparisonRows.map(({ item, matchedPrice }) => {
       if (!matchedPrice) {
-        return {
-          itemName: item.name,
-          preferredStore: { primary: '0', secondary: '' },
-          oneStore: { primary: '0', secondary: '' },
-          multiStore: { primary: '0', secondary: '' },
-        };
+        return { itemName: item.name, preferredPrice: '—', oneStorePrice: '—', multiShopPrice: '—', multiShopStore: '—' };
       }
+
       const preferredStorePrice = matchedPrice.prices?.[preferredStoreId];
       const oneStorePrice = matchedPrice.prices?.[effectiveBestStoreId];
-      return {
-        itemName: item.name,
-        preferredStore: preferredStorePrice === undefined
-          ? { primary: '0', secondary: '' }
-          : { primary: `$${Number(preferredStorePrice).toFixed(2)}`, secondary: '' },
-        oneStore: oneStorePrice === undefined
-          ? { primary: '0', secondary: '' }
-          : { primary: `$${Number(oneStorePrice).toFixed(2)}`, secondary: effectiveBestStoreName },
-        multiStore: { primary: '0', secondary: '' },
-      };
-    });
-  }, [bestSingleStore, effectiveBestStoreId, comparisonRows, preferredStoreId, storeById]);
 
-  const totals = useMemo(() => {
-    let preferred = 0;
-    let oneStore = 0;
-    let preferredComplete = true;
-    let oneStoreComplete = true;
-    for (const item of tableData) {
-      if (item.preferredStore.primary === '0') { preferredComplete = false; }
-      else { preferred += Number.parseFloat(item.preferredStore.primary.replace('$', '')) || 0; }
-      if (item.oneStore.primary === '0') { oneStoreComplete = false; }
-      else { oneStore += Number.parseFloat(item.oneStore.primary.replace('$', '')) || 0; }
-    }
-    return {
-      preferred: preferredComplete ? preferred : null,
-      oneStore: oneStoreComplete ? oneStore : null,
-    };
-  }, [tableData]);
-
-  const multiStoreTableData = useMemo(() => {
-    return comparisonRows.map(({ item, matchedPrice }) => {
-      if (!matchedPrice) return { itemName: item.name, price: '0', storeName: '—' };
+      // Multi Shop: cheapest across all stores
       const entries = Object.entries(matchedPrice.prices || {})
         .filter(([, v]) => Number(v) > 0)
         .sort(([, a], [, b]) => Number(a) - Number(b));
-      if (!entries.length) return { itemName: item.name, price: '0', storeName: '—' };
-      const [bestStoreId, bestPrice] = entries[0];
+      const [cheapestStoreId, cheapestPrice] = entries[0] ?? [null, null];
+
       return {
         itemName: item.name,
-        price: `$${Number(bestPrice).toFixed(2)}`,
-        storeName: storeById.get(bestStoreId)?.name || 'Unknown Store',
+        preferredPrice: preferredStorePrice != null ? `$${Number(preferredStorePrice).toFixed(2)}` : '—',
+        oneStorePrice:  oneStorePrice       != null ? `$${Number(oneStorePrice).toFixed(2)}`       : '—',
+        multiShopPrice: cheapestPrice       != null ? `$${Number(cheapestPrice).toFixed(2)}`       : '—',
+        multiShopStore: cheapestStoreId ? (storeById.get(cheapestStoreId)?.name ?? 'Unknown') : '—',
       };
     });
-  }, [comparisonRows, storeById]);
+  }, [comparisonRows, preferredStoreId, effectiveBestStoreId, storeById]);
 
-  const multiStoreTotal = useMemo(() =>
-    multiStoreTableData.reduce((sum, row) =>
-      sum + (row.price === '0' ? 0 : Number(row.price.replace('$', '')) || 0), 0),
-  [multiStoreTableData]);
-
-  let comparisonContent;
-  if (shoppingListItems.length === 0) {
-    comparisonContent = (
-      <div className="ios-card">
-        <p className="text-center text-muted-foreground py-8">Add items to your shopping list to compare prices.</p>
-      </div>
-    );
-  } else if (mode === 'one-stop') {
-    comparisonContent = tableData.length > 0 ? (
-      <div className="ios-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-left font-semibold">Items</TableHead>
-              <TableHead className="text-left font-semibold">{preferredStore?.name || 'Preferred Store'}</TableHead>
-              <TableHead className="text-left font-semibold">{bestSingleStore?.store.name || storeById.get(effectiveBestStoreId)?.name || 'Best Store'}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tableData.map((row) => (
-              <TableRow key={row.itemName}>
-                <TableCell className="font-medium">{row.itemName}</TableCell>
-                <TableCell className="font-medium">{row.preferredStore.primary}</TableCell>
-                <TableCell className="font-medium">{row.oneStore.primary}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-          <TableFooter>
-            <TableRow>
-              <TableCell className="font-bold">Total Cost</TableCell>
-              <TableCell className="font-bold">{totals.preferred === null ? '0' : `$${totals.preferred.toFixed(2)}`}</TableCell>
-              <TableCell className="font-bold">{totals.oneStore === null ? '0' : `$${totals.oneStore.toFixed(2)}`}</TableCell>
-            </TableRow>
-          </TableFooter>
-        </Table>
-        <p className="text-xs text-muted-foreground mt-3">0 : item not available in store</p>
-      </div>
-    ) : (
-      <div className="ios-card">
-        <p className="text-center text-muted-foreground py-8">No comparison data available</p>
-      </div>
-    );
-  } else {
-    comparisonContent = multiStoreTableData.length > 0 ? (
-      <div className="space-y-4">
-        {/* Per-item cheapest breakdown */}
-        <div className="ios-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-left font-semibold">Items</TableHead>
-                <TableHead className="text-left font-semibold">Price</TableHead>
-                <TableHead className="text-left font-semibold">Store</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {multiStoreTableData.map((row) => (
-                <TableRow key={row.itemName}>
-                  <TableCell className="font-medium">{row.itemName}</TableCell>
-                  <TableCell className="font-medium">{row.price}</TableCell>
-                  <TableCell className="font-medium">{row.storeName}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-            <TableFooter>
-              <TableRow>
-                <TableCell className="font-bold">Total Cost</TableCell>
-                <TableCell className="font-bold">${multiStoreTotal.toFixed(2)}</TableCell>
-                <TableCell />
-              </TableRow>
-            </TableFooter>
-          </Table>
-          <p className="text-xs text-muted-foreground mt-3">0 : item not available in store</p>
-        </div>
-
-        {/* Total cost comparison across all strategies */}
-        <div className="ios-card">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Total Cost Comparison</p>
-          <div className="space-y-2">
-            {[
-              { label: preferredStore?.name || 'Preferred Store', value: totals.preferred, highlight: false },
-              { label: bestSingleStore?.store.name || storeById.get(effectiveBestStoreId)?.name || 'Best Single Store', value: totals.oneStore, highlight: false },
-              { label: 'Multi-Store', value: multiStoreTotal, highlight: true },
-            ].map(({ label, value, highlight }) => (
-              <div key={label} className={`flex items-center justify-between rounded-lg px-3 py-2 ${highlight ? 'bg-success/10' : 'bg-muted/40'}`}>
-                <span className={`text-sm font-medium ${highlight ? 'text-success' : 'text-foreground'}`}>{label}</span>
-                <span className={`text-sm font-bold ${highlight ? 'text-success' : 'text-foreground'}`}>
-                  {value === null ? '—' : `$${value.toFixed(2)}`}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    ) : (
-      <div className="ios-card">
-        <p className="text-center text-muted-foreground py-8">No comparison data available</p>
-      </div>
-    );
-  }
+  const basketTotals = useMemo(() => {
+    let preferred = 0, oneStore = 0, multiShop = 0;
+    for (const row of unifiedRows) {
+      if (row.preferredPrice !== '—') preferred += Number(row.preferredPrice.replace('$', ''));
+      if (row.oneStorePrice  !== '—') oneStore  += Number(row.oneStorePrice.replace('$', ''));
+      if (row.multiShopPrice !== '—') multiShop += Number(row.multiShopPrice.replace('$', ''));
+    }
+    return {
+      preferred: preferred > 0 ? `$${preferred.toFixed(2)}` : '—',
+      oneStore:  oneStore  > 0 ? `$${oneStore.toFixed(2)}`  : '—',
+      multiShop: multiShop > 0 ? `$${multiShop.toFixed(2)}` : '—',
+    };
+  }, [unifiedRows]);
 
   if (loading) {
     return <div className="page-container py-8 text-sm text-muted-foreground">Loading comparison data...</div>;
@@ -534,16 +405,16 @@ const ComparisonScreen = () => {
   return (
     <div className="page-container">
       <h1 className="text-xl font-bold text-foreground mb-1 pt-2">Price Comparison</h1>
-      {warning ? (
+      {warning && (
         <div className="ios-card mb-4 border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
           {warning}
         </div>
-      ) : null}
+      )}
       <p className="text-sm text-muted-foreground mb-1">{shoppingListItems.length} items in your list</p>
-      <p className="text-xs text-muted-foreground mb-3">Searching stores within {searchRadius} miles</p>
+      {/* <p className="text-xs text-muted-foreground mb-3">Searching stores within {searchRadius} miles</p> */}
 
-      <div className="mb-4 space-y-2">
-        <label htmlFor="comparison-zip" className="block text-xs font-medium text-muted-foreground">Adjust ZIP code for route</label>
+      {/* <div className="mb-4 space-y-2">
+        <label htmlFor="comparison-zip" className="block text-xs font-medium text-muted-foreground">Adjust ZIP code</label>
         <div className="flex gap-2">
           <input
             id="comparison-zip"
@@ -562,28 +433,54 @@ const ComparisonScreen = () => {
         </div>
         {geocodeError && <p className="text-xs text-destructive">{geocodeError}</p>}
         {zipLocationName && !geocodeError && <p className="text-xs text-gray-400">{zipLocationName}</p>}
-      </div>
+      </div> */}
 
-      <div className="flex gap-1 p-1 bg-secondary rounded-xl mb-5">
-        <button
-          onClick={() => setMode('one-stop')}
-          className={`flex-1 h-9 rounded-lg text-xs font-semibold transition-all tap-highlight ${
-            mode === 'one-stop' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
-          }`}
-        >
-          One-Stop Shop
-        </button>
-        <button
-          onClick={() => setMode('multi-stop')}
-          className={`flex-1 h-9 rounded-lg text-xs font-semibold transition-all tap-highlight ${
-            mode === 'multi-stop' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
-          }`}
-        >
-          Multi-Stop Saver
-        </button>
-      </div>
-
-      {comparisonContent}
+      {shoppingListItems.length === 0 ? (
+        <div className="ios-card">
+          <p className="text-center text-muted-foreground py-8">Add items to your shopping list to compare prices.</p>
+        </div>
+      ) : unifiedRows.length === 0 ? (
+        <div className="ios-card">
+          <p className="text-center text-muted-foreground py-8">No comparison data available.</p>
+        </div>
+      ) : (
+        <div className="ios-card overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-left font-semibold">Items</TableHead>
+                <TableHead className="text-left font-semibold text-xs">{preferredStoreName_col}</TableHead>
+                <TableHead className="text-left font-semibold text-xs">{oneStoreName_col}</TableHead>
+                <TableHead className="text-left font-semibold text-xs">Multi Shop</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {unifiedRows.map((row) => (
+                <TableRow key={row.itemName}>
+                  <TableCell className="font-medium text-xs">{row.itemName}</TableCell>
+                  <TableCell className="text-xs">{row.preferredPrice}</TableCell>
+                  <TableCell className="text-xs">{row.oneStorePrice}</TableCell>
+                  <TableCell className="text-xs">
+                    <span className="font-medium">{row.multiShopPrice}</span>
+                    {row.multiShopStore !== '—' && (
+                      <span className="block text-[0.65rem] text-muted-foreground">{row.multiShopStore}</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell className="font-bold text-xs">Basket Cost</TableCell>
+                <TableCell className="font-bold text-xs">{basketTotals.preferred}</TableCell>
+                <TableCell className="font-bold text-xs">{basketTotals.oneStore}</TableCell>
+                <TableCell className="font-bold text-xs">{basketTotals.multiShop}</TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
+          <p className="text-xs text-muted-foreground mt-3">— : item not available at this store</p>
+        </div>
+      )}
     </div>
   );
 };
