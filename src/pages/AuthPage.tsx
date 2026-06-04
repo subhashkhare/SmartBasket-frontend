@@ -113,8 +113,13 @@ export default function AuthPage() {
     if (!pinRegex.test(pin)) {
       nextErrors.pin = 'PIN must be exactly 4 digits';
     }
-    if (zipCodeValue && !zipCodeRegex.test(zipCodeValue.trim())) {
+    if (!zipCodeValue.trim()) {
+      nextErrors.zipCode = 'ZIP code is required';
+    } else if (!zipCodeRegex.test(zipCodeValue.trim())) {
       nextErrors.zipCode = 'ZIP must be 12345 or 12345-6789';
+    }
+    if (!selectedStore && !storeInput.trim()) {
+      nextErrors.preferredStore = 'Please select a preferred store';
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -404,7 +409,7 @@ export default function AuthPage() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="zipCode">ZIP Code (Optional)</Label>
+                  <Label htmlFor="zipCode">ZIP Code</Label>
                   <Input
                     id="zipCode"
                     name="zipCode"
@@ -415,6 +420,7 @@ export default function AuthPage() {
                     maxLength={10}
                     value={zipCodeValue}
                     aria-invalid={!!registerErrors.zipCode}
+                    required
                     onChange={e => {
                       setZipCodeValue(e.target.value);
                       setStoreInput('');
@@ -434,16 +440,20 @@ export default function AuthPage() {
                   )}
                 </div>
                 <div className="space-y-2 relative">
-                  <Label htmlFor="preferredStore">Preferred Store (Optional)</Label>
+                  <Label htmlFor="preferredStore">Preferred Store</Label>
                   <Input
                     id="preferredStore"
                     placeholder={/^\d{5}$/.test(zipCodeValue) ? 'Type at least 3 characters...' : 'Enter ZIP code first'}
                     disabled={!/^\d{5}$/.test(zipCodeValue)}
                     value={storeInput}
                     autoComplete="off"
+                    aria-invalid={!!registerErrors.preferredStore}
                     onChange={e => {
                       setStoreInput(e.target.value);
                       setSelectedStore('');
+                      if (registerErrors.preferredStore) {
+                        setRegisterErrors(prev => ({ ...prev, preferredStore: undefined }));
+                      }
                     }}
                     onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                     onFocus={() => storeSuggestions.length > 0 && setShowSuggestions(true)}
@@ -453,6 +463,9 @@ export default function AuthPage() {
                   )}
                   {selectedStore && (
                     <p className="text-xs text-green-600">✓ {selectedStore}</p>
+                  )}
+                  {registerErrors.preferredStore && (
+                    <p className="text-xs text-destructive">{registerErrors.preferredStore}</p>
                   )}
                   {showSuggestions && storeSuggestions.length === 0 && !storeSuggestionsLoading && (
                     <p className="text-xs text-muted-foreground">No stores found within 10 miles</p>

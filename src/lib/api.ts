@@ -87,6 +87,14 @@ interface ReceiptItemPayload {
   totalPrice: number;
 }
 
+interface ReceiptDocument {
+  _id: string;
+  storeName: string;
+  receiptDate: string | null;
+  items: ReceiptItemPayload[];
+  total: number;
+}
+
 interface SaveReceiptPayload {
   storeId: string;
   storeName: string;
@@ -697,6 +705,12 @@ class ApiService {
     } catch {
       return 'unknown';
     }
+  }
+
+  async getReceipts(): Promise<ApiResponse<ReceiptDocument[]>> {
+    const userId = this.getCurrentUserId();
+    const query = userId !== 'unknown' ? `?userId=${encodeURIComponent(userId)}` : '';
+    return this.request<ReceiptDocument[]>(`/receipts${query}`);
   }
 
   async saveReceipt(

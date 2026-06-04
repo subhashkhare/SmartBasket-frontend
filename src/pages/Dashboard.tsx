@@ -14,9 +14,12 @@ interface ReceiptEntry {
 
 interface TrendingItem {
   itemName: string;
+  preferredPrice: number;
   cheapestPrice: number;
   cheapestStore: string;
+  savings: number;
   storeCount: number;
+  quantity: number;
 }
 
 const toTitleCase = (str: string) =>
@@ -46,6 +49,14 @@ function getCurrentUserKey(): string {
     }
   } catch {}
   return 'unknown';
+}
+
+function getPreferredStoreName(): string {
+  try {
+    const s = localStorage.getItem('smartCartSession') || localStorage.getItem('smartCartUser');
+    if (s) return (JSON.parse(s).preferredStore || '').toLowerCase().trim();
+  } catch {}
+  return '';
 }
 
 function shortId(id: string): string {
@@ -108,33 +119,78 @@ const Dashboard = () => {
     const loadTrending = async () => {
       setTrendingLoading(true);
       try {
-        const [pricesResp, storesResp] = await Promise.all([
+        const [pricesResp, storesResp, receiptsResp] = await Promise.all([
           apiService.getPrices(),
           apiService.getStores(),
+          apiService.getReceipts(),
         ]);
 
         const prices = pricesResp.data || [];
         const stores = storesResp.data || [];
         const storeMap = new Map(stores.map((s) => [s._id || String(s.id), s.name]));
 
+        // Find the user's preferred store ID
+        const preferredStoreName = getPreferredStoreName();
+        const preferredStoreId = preferredStoreName
+          ? (stores.find((s) => (s.name || '').toLowerCase().trim() === preferredStoreName)?._id || null)
+          : null;
+
+        // Build itemName → quantity from receipt items
+        const quantityMap = new Map<string, number>();
+        for (const receipt of (receiptsResp.data || [])) {
+          for (const item of receipt.items) {
+            const key = item.itemName.toLowerCase();
+            if (!quantityMap.has(key)) quantityMap.set(key, item.quantity ?? 1);
+          }
+        }
+
         const items: TrendingItem[] = prices
           .map((p) => {
-            const entries = Object.entries(p.prices || {})
-              .filter(([, v]) => Number(v) > 0)
-              .sort(([, a], [, b]) => Number(a) - Number(b));
-            if (!entries.length) return null;
-            const [cheapestStoreId, cheapestPrice] = entries[0];
+            const allEntries = Object.entries(p.prices || {})
+              .map(([id, v]) => [id, Number(v)] as [string, number])
+              .filter(([, v]) => v > 0);
+            if (!allEntries.length) return null;
+
+            const quantity = quantityMap.get((p.itemName || '').toLowerCase()) ?? 1;
+
+            if (preferredStoreId) {
+              const preferredEntry = allEntries.find(([id]) => id === preferredStoreId);
+              if (!preferredEntry) return null;
+              const otherEntries = allEntries.filter(([id]) => id !== preferredStoreId);
+              if (!otherEntries.length) return null;
+              const [cheapestOtherId, cheapestOtherPrice] = otherEntries.reduce(
+                (min, e) => (e[1] < min[1] ? e : min)
+              );
+              const savings = preferredEntry[1] - cheapestOtherPrice;
+              if (savings <= 0) return null;
+              return {
+                itemName: p.itemName || '',
+                preferredPrice: preferredEntry[1],
+                cheapestPrice: cheapestOtherPrice,
+                cheapestStore: storeMap.get(cheapestOtherId) || 'Unknown',
+                savings,
+                storeCount: allEntries.length,
+                quantity,
+              };
+            }
+
+            // No preferred store — fall back to most-tracked items
+            const [cheapestStoreId, cheapestPrice] = allEntries.reduce(
+              (min, e) => (e[1] < min[1] ? e : min)
+            );
             return {
               itemName: p.itemName || '',
-              cheapestPrice: Number(cheapestPrice),
+              preferredPrice: 0,
+              cheapestPrice,
               cheapestStore: storeMap.get(cheapestStoreId) || 'Unknown',
-              storeCount: entries.length,
+              savings: 0,
+              storeCount: allEntries.length,
+              quantity,
             };
           })
           .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
-          // Most-tracked first (most stores), then by cheapest price
-          .sort((a, b) => b.storeCount - a.storeCount || a.cheapestPrice - b.cheapestPrice)
-          .slice(0, 10);
+          .sort((a, b) => b.savings - a.savings || b.storeCount - a.storeCount)
+          .slice(0, 5);
 
         setTrendingItems(items);
       } catch {
@@ -190,8 +246,8 @@ const Dashboard = () => {
                 <tr className="border-b border-border">
                   <th className="w-6 pb-2 pr-2" />
                   <th className="text-left text-xs text-muted-foreground font-medium pb-2 pr-3">Item</th>
-                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 pr-3 whitespace-nowrap">Best Price</th>
-                  <th className="text-left text-xs text-muted-foreground font-medium pb-2 whitespace-nowrap">Store</th>
+                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 pr-3 whitespace-nowrap">Qty</th>
+                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 whitespace-nowrap">Save</th>
                 </tr>
               </thead>
               <tbody>
@@ -211,14 +267,14 @@ const Dashboard = () => {
                           className="w-3.5 h-3.5 accent-primary cursor-pointer"
                         />
                       </td>
-                      <td className={`py-2 pr-3 text-xs font-medium max-w-[130px] truncate ${checked ? 'text-primary' : 'text-foreground'}`}>
+                      <td className={`py-2 pr-3 text-xs font-medium max-w-[110px] truncate ${checked ? 'text-primary' : 'text-foreground'}`}>
                         {toTitleCase(item.itemName)}
                       </td>
-                      <td className="py-2 pr-3 text-xs font-semibold text-primary text-right whitespace-nowrap">
-                        ${item.cheapestPrice.toFixed(2)}
+                      <td className="py-2 pr-3 text-xs text-muted-foreground text-right whitespace-nowrap">
+                        {item.quantity}
                       </td>
-                      <td className="py-2 text-xs text-muted-foreground max-w-[110px] truncate">
-                        {toTitleCase(item.cheapestStore)}
+                      <td className="py-2 text-xs font-semibold text-green-600 text-right whitespace-nowrap">
+                        {item.savings > 0 ? `-$${item.savings.toFixed(2)}` : '—'}
                       </td>
                     </tr>
                   );
@@ -230,7 +286,7 @@ const Dashboard = () => {
       </div>
 
       {/* Scanned Receipts */}
-      <div className="ios-card">
+      {/* <div className="ios-card">
         <div className="flex items-center gap-2 mb-1">
           <ReceiptText size={16} className="text-primary" />
           <p className="text-sm font-semibold text-foreground">Scanned Receipts</p>
@@ -281,7 +337,7 @@ const Dashboard = () => {
             </table>
           </div>
         )}
-      </div>
+      </div> */}
     </div>
   );
 };

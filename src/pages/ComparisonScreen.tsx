@@ -124,8 +124,8 @@ const ComparisonScreen = () => {
 
   const loading = storesLoading || pricesLoading;
 
-  const stores: Store[] = (!storesResp?.error && storesResp?.data) ? storesResp.data : [];
-  const prices: PriceObservation[] = (!pricesResp?.error && pricesResp?.data) ? pricesResp.data : [];
+  const stores: Store[] = useMemo(() => (!storesResp?.error && storesResp?.data) ? storesResp.data : [], [storesResp]);
+  const prices: PriceObservation[] = useMemo(() => (!pricesResp?.error && pricesResp?.data) ? pricesResp.data : [], [pricesResp]);
 
   useEffect(() => {
     if (loading) return;
@@ -398,6 +398,26 @@ const ComparisonScreen = () => {
     };
   }, [unifiedRows]);
 
+  const recommendations = useMemo(() => {
+    if (!preferredStoreId) return [];
+    return prices
+      .flatMap((p) => {
+        const allEntries = Object.entries(p.prices || {})
+          .map(([id, v]) => [id, Number(v)] as [string, number])
+          .filter(([, v]) => v > 0);
+        const preferredEntry = allEntries.find(([id]) => id === preferredStoreId);
+        if (!preferredEntry) return [];
+        const others = allEntries.filter(([id]) => id !== preferredStoreId);
+        if (!others.length) return [];
+        const cheapest = others.reduce((min, e) => (e[1] < min[1] ? e : min));
+        const savings = preferredEntry[1] - cheapest[1];
+        if (savings <= 0) return [];
+        return [{ itemName: p.itemName, preferredPrice: preferredEntry[1], cheapestPrice: cheapest[1], cheapestStore: storeById.get(cheapest[0])?.name ?? 'Unknown', savings }];
+      })
+      .sort((a, b) => b.savings - a.savings)
+      .slice(0, 5);
+  }, [prices, preferredStoreId, storeById]);
+
   if (loading) {
     return <div className="page-container py-8 text-sm text-muted-foreground">Loading comparison data...</div>;
   }
@@ -449,7 +469,9 @@ const ComparisonScreen = () => {
             <TableHeader>
               <TableRow>
                 <TableHead className="text-left font-semibold">Items</TableHead>
-                <TableHead className="text-left font-semibold text-xs">{preferredStoreName_col}</TableHead>
+                <TableHead className="text-left font-semibold text-xs">
+                  {preferredStoreName_col}
+                </TableHead>
                 <TableHead className="text-left font-semibold text-xs">{oneStoreName_col}</TableHead>
                 <TableHead className="text-left font-semibold text-xs">Multi Shop</TableHead>
               </TableRow>
@@ -481,6 +503,40 @@ const ComparisonScreen = () => {
           <p className="text-xs text-muted-foreground mt-3">— : item not available at this store</p>
         </div>
       )}
+
+      {/* {recommendations.length > 0 && (
+        <div className="ios-card mt-4">
+          <p className="text-sm font-semibold text-foreground mb-1">Buy Elsewhere &amp; Save</p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Items cheaper at another store than {preferredStoreName_col}
+          </p>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-left text-xs font-medium text-muted-foreground pb-2">Item</TableHead>
+                <TableHead className="text-right text-xs font-medium text-muted-foreground pb-2">Your Store</TableHead>
+                <TableHead className="text-right text-xs font-medium text-muted-foreground pb-2">Best Price</TableHead>
+                <TableHead className="text-right text-xs font-medium text-muted-foreground pb-2">Save</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {recommendations.map((rec) => (
+                <TableRow key={rec.itemName}>
+                  <TableCell className="text-xs font-medium capitalize">{rec.itemName}</TableCell>
+                  <TableCell className="text-xs text-right text-muted-foreground">${rec.preferredPrice.toFixed(2)}</TableCell>
+                  <TableCell className="text-xs text-right">
+                    <span className="font-semibold text-primary">${rec.cheapestPrice.toFixed(2)}</span>
+                    <span className="block text-[0.65rem] text-muted-foreground">{rec.cheapestStore}</span>
+                  </TableCell>
+                  <TableCell className="text-xs text-right font-semibold text-green-600">
+                    -${rec.savings.toFixed(2)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )} */}
     </div>
   );
 };

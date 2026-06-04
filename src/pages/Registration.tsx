@@ -244,7 +244,7 @@ const Registration = () => {
           {/* Phone Number */}
           <div>
             <label htmlFor="phoneNumber" className="block text-sm font-medium text-foreground mb-2">
-              Phone Number
+              Phone Number <span className="text-destructive">*</span>
             </label>
             <input
               id="phoneNumber"
@@ -253,6 +253,7 @@ const Registration = () => {
               value={formData.phoneNumber}
               onChange={handleInputChange}
               placeholder="(555) 123-4567"
+              required
               className="w-full h-11 rounded-xl bg-card border border-border px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
@@ -261,7 +262,7 @@ const Registration = () => {
           {mode === 'register' && (
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-foreground mb-2">
-                Email
+                Email <span className="text-destructive">*</span>
               </label>
               <input
                 id="email"
@@ -270,6 +271,7 @@ const Registration = () => {
                 value={formData.email}
                 onChange={handleInputChange}
                 placeholder="you@example.com"
+                required
                 className="w-full h-11 rounded-xl bg-card border border-border px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
@@ -278,7 +280,7 @@ const Registration = () => {
           {/* PIN */}
           <div>
             <label htmlFor="pin" className="block text-sm font-medium text-foreground mb-2">
-              {mode === 'register' ? 'Create PIN' : 'PIN'}
+              {mode === 'register' ? 'Create PIN' : 'PIN'} <span className="text-destructive">*</span>
             </label>
             <div className="relative">
               <input
@@ -288,6 +290,7 @@ const Registration = () => {
                 value={formData.pin}
                 onChange={handleInputChange}
                 placeholder={mode === 'register' ? 'Create a 4-digit PIN' : 'Enter your PIN'}
+                required
                 className="w-full h-11 rounded-xl bg-card border border-border px-4 pr-11 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
               <button
@@ -307,7 +310,7 @@ const Registration = () => {
           {mode === 'register' && (
             <div>
               <label htmlFor="zipCode" className="block text-sm font-medium text-foreground mb-2">
-                ZIP Code
+                ZIP Code <span className="text-destructive">*</span>
               </label>
               <input
                 id="zipCode"
@@ -317,6 +320,7 @@ const Registration = () => {
                 onChange={handleInputChange}
                 placeholder="90210"
                 maxLength={5}
+                required
                 className="w-full h-11 rounded-xl bg-card border border-border px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
               <p className="text-[10px] text-muted-foreground mt-1">Must be 5 digits</p>
@@ -327,7 +331,7 @@ const Registration = () => {
           {mode === 'register' && (
             <div className="relative">
               <label htmlFor="preferredStore" className="block text-sm font-medium text-foreground mb-2">
-                Preferred Store
+                Preferred Store <span className="text-destructive">*</span>
               </label>
               <input
                 id="preferredStore"
