@@ -6,7 +6,7 @@ import { apiService } from '@/lib/api';
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [userData, setUserData] = useState<{ phoneNumber?: string; preferredStore?: string } | null>(null);
+  const [userData, setUserData] = useState<{ phoneNumber?: string; preferredStore?: string; zipCode?: string } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const firstMenuItemRef = useRef<HTMLAnchorElement>(null);
@@ -95,16 +95,24 @@ const Header = () => {
           >
             {/* User Info */}
             {userData && (
-              <div className="px-4 py-3 border-b border-border">
-                <p className="text-xs text-muted-foreground mb-1">Phone</p>
-                <p className="text-sm font-semibold text-foreground truncate">
-                  {formatPhoneNumber(userData.phoneNumber || '')}
-                </p>
+              <div className="px-4 py-3 border-b border-border space-y-2">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Phone</p>
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    {formatPhoneNumber(userData.phoneNumber || '')}
+                  </p>
+                </div>
                 {userData.preferredStore && (
-                  <>
-                    <p className="text-xs text-muted-foreground mt-2 mb-1">Preferred Store</p>
-                    <p className="text-sm font-medium text-primary">{userData.preferredStore}</p>
-                  </>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">Preferred Store</p>
+                    <p className="text-sm font-medium text-foreground truncate">{userData.preferredStore}</p>
+                  </div>
+                )}
+                {userData.zipCode && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">ZIP Code</p>
+                    <p className="text-sm font-medium text-foreground">{userData.zipCode}</p>
+                  </div>
                 )}
               </div>
             )}

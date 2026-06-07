@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiService } from '@/lib/api';
 import { PriceObservation, ShoppingListItem, Store } from '@/types';
@@ -14,33 +14,6 @@ type UnifiedRow = {
 };
 
 const SHOPPING_LIST_SESSION_KEY = 'smartCartShoppingListSession';
-const DEFAULT_SEARCH_RADIUS = 10;
-
-function getStoredSearchRadius(): number {
-  try {
-    const session = globalThis.localStorage.getItem('smartCartSession');
-    if (!session) return DEFAULT_SEARCH_RADIUS;
-    const parsed = JSON.parse(session) as { searchRadius?: unknown };
-    const radius = Number(parsed.searchRadius);
-    return Number.isFinite(radius) ? radius : DEFAULT_SEARCH_RADIUS;
-  } catch {
-    return DEFAULT_SEARCH_RADIUS;
-  }
-}
-
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 3958.8;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function toRad(deg: number): number {
-  return (deg * Math.PI) / 180;
-}
 
 function normalizeForMatch(value: string): string {
   return value
@@ -102,12 +75,6 @@ function matchPriceForShoppingItem(item: ShoppingListItem, prices: PriceObservat
 }
 
 const ComparisonScreen = () => {
-  const [manualZip, setManualZip] = useState('');
-  const [zipLocationName, setZipLocationName] = useState('');
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [searchRadius] = useState(() => getStoredSearchRadius());
-  const [isGeocoding, setIsGeocoding] = useState(false);
-  const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
 
   const { data: storesResp, isLoading: storesLoading } = useQuery({
@@ -139,26 +106,23 @@ const ComparisonScreen = () => {
     }
   }, [loading, storesResp?.error, pricesResp?.error]);
 
-  useEffect(() => {
-    try {
-      const savedUser = globalThis.localStorage.getItem('smartCartUser');
-      if (savedUser) {
-        const parsed = JSON.parse(savedUser);
-        if (parsed?.zipCode) {
-          setManualZip(parsed.zipCode);
-          void geocodeZip(parsed.zipCode);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to parse user from localStorage', err);
-    }
-  }, []);
 
   const storeById = useMemo(() => {
     const m = new Map<string, Store>();
     stores.forEach((s) => m.set(s._id || String(s.id), s));
     return m;
   }, [stores]);
+
+  // Fallback: price catalog storeIds may be store names instead of MongoDB _id
+  const storeByName = useMemo(() => {
+    const m = new Map<string, Store>();
+    stores.forEach((s) => { if (s.name) m.set(s.name.toLowerCase(), s); });
+    return m;
+  }, [stores]);
+
+  const resolveStore = useCallback((id: string): Store | undefined =>
+    storeById.get(id) ?? storeByName.get(id.toLowerCase()),
+  [storeById, storeByName]);
 
   const shoppingListItems = useMemo(() => getSessionShoppingListItems(), []);
 
@@ -185,9 +149,8 @@ const ComparisonScreen = () => {
   }, [comparisonRows]);
 
   const comparisons: StoreComparison[] = useMemo(() => {
-    const candidateStores = userLocation
-      ? stores.filter((store) => haversine(userLocation.lat, userLocation.lng, Number(store.lat), Number(store.lng)) <= searchRadius)
-      : stores;
+    // Always use all stores — location filter is unreliable when store coords default to SF fallback
+    const candidateStores = stores;
 
     if (!candidateStores.length) return [];
     const totals = new Map<string, number>();
@@ -223,46 +186,10 @@ const ComparisonScreen = () => {
         }
         return a.totalCost - b.totalCost;
       });
-  }, [filteredPrices, searchRadius, stores, userLocation]);
+  }, [filteredPrices, stores]);
 
   const sorted = comparisons;
   const cheapest = sorted[0];
-
-  const geocodeZip = async (zip: string) => {
-    const normalized = zip.trim();
-    if (!/^\d{5}$/.exec(normalized)) {
-      setGeocodeError('Enter a valid 5-digit ZIP code');
-      return;
-    }
-
-    setIsGeocoding(true);
-    setGeocodeError(null);
-
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&postalcode=${encodeURIComponent(normalized)}&countrycodes=us&limit=1`,
-        { headers: { 'User-Agent': 'smart-cart-saver-app/1.0' } }
-      );
-      const results = await response.json();
-
-      if (!Array.isArray(results) || results.length === 0) {
-        setGeocodeError('ZIP code not found');
-        return;
-      }
-
-      const nextLocation = { lat: Number.parseFloat(results[0].lat), lng: Number.parseFloat(results[0].lon) };
-      setUserLocation(nextLocation);
-      setManualZip(normalized);
-      const displayName: string = results[0].display_name || '';
-      const parts = displayName.split(',').map((s: string) => s.trim());
-      setZipLocationName(parts.slice(0, 2).join(', '));
-    } catch (err) {
-      setGeocodeError('Geocoding failed - try again');
-      console.error('Geocoding error', err);
-    } finally {
-      setIsGeocoding(false);
-    }
-  };
 
 
   const preferredStoreName = useMemo(() => {
@@ -357,7 +284,16 @@ const ComparisonScreen = () => {
   const effectiveBestStoreId = bestSingleStoreId || fallbackBestStoreId || '';
 
   const preferredStoreName_col = preferredStore?.name || 'Preferred Store';
-  const oneStoreName_col = bestSingleStore?.store.name || storeById.get(effectiveBestStoreId)?.name || 'Best Store';
+
+  // Find the name for the "best single store" column from storeNames embedded in price docs
+  const oneStoreName_col = useMemo(() => {
+    if (bestSingleStore?.store.name) return bestSingleStore.store.name;
+    if (!effectiveBestStoreId) return 'Best Store';
+    const fromStoreNames = filteredPrices
+      .map((p) => p.storeNames?.[effectiveBestStoreId])
+      .find(Boolean);
+    return fromStoreNames || resolveStore(effectiveBestStoreId)?.name || 'Best Store';
+  }, [bestSingleStore, effectiveBestStoreId, filteredPrices, resolveStore]);
 
   const unifiedRows: UnifiedRow[] = useMemo(() => {
     return comparisonRows.map(({ item, matchedPrice }) => {
@@ -368,21 +304,26 @@ const ComparisonScreen = () => {
       const preferredStorePrice = matchedPrice.prices?.[preferredStoreId];
       const oneStorePrice = matchedPrice.prices?.[effectiveBestStoreId];
 
-      // Multi Shop: cheapest across all stores
+      // Multi Shop: cheapest store where we can identify the name; fall back to absolute cheapest
       const entries = Object.entries(matchedPrice.prices || {})
         .filter(([, v]) => Number(v) > 0)
         .sort(([, a], [, b]) => Number(a) - Number(b));
-      const [cheapestStoreId, cheapestPrice] = entries[0] ?? [null, null];
+      const cheapestNamed = entries.find(([id]) =>
+        !!(matchedPrice.storeNames?.[id] || resolveStore(id)?.name)
+      );
+      const [cheapestStoreId, cheapestPrice] = (cheapestNamed ?? entries[0] ?? [null, null]) as [string | null, number | null];
 
       return {
         itemName: item.name,
         preferredPrice: preferredStorePrice != null ? `$${Number(preferredStorePrice).toFixed(2)}` : '—',
         oneStorePrice:  oneStorePrice       != null ? `$${Number(oneStorePrice).toFixed(2)}`       : '—',
         multiShopPrice: cheapestPrice       != null ? `$${Number(cheapestPrice).toFixed(2)}`       : '—',
-        multiShopStore: cheapestStoreId ? (storeById.get(cheapestStoreId)?.name ?? 'Unknown') : '—',
+        multiShopStore: cheapestStoreId
+          ? (matchedPrice.storeNames?.[cheapestStoreId] || resolveStore(cheapestStoreId)?.name || '')
+          : '—',
       };
     });
-  }, [comparisonRows, preferredStoreId, effectiveBestStoreId, storeById]);
+  }, [comparisonRows, preferredStoreId, effectiveBestStoreId, resolveStore]);
 
   const basketTotals = useMemo(() => {
     let preferred = 0, oneStore = 0, multiShop = 0;
@@ -397,6 +338,27 @@ const ComparisonScreen = () => {
       multiShop: multiShop > 0 ? `$${multiShop.toFixed(2)}` : '—',
     };
   }, [unifiedRows]);
+
+  const savingsSummary = useMemo(() => {
+    const parse = (s: string) => (s !== '—' ? Number(s.replace('$', '')) : null);
+    const prefTotal = parse(basketTotals.preferred);
+    const oneTotal  = parse(basketTotals.oneStore);
+    const multiTotal = parse(basketTotals.multiShop);
+
+    const rows = [
+      { label: preferredStoreName_col, total: prefTotal,  savingsVsPref: null as number | null, isBaseline: true },
+      { label: oneStoreName_col,        total: oneTotal,   savingsVsPref: prefTotal != null && oneTotal  != null ? prefTotal - oneTotal  : null, isBaseline: false },
+      { label: 'Multi Shop',            total: multiTotal, savingsVsPref: prefTotal != null && multiTotal != null ? prefTotal - multiTotal : null, isBaseline: false },
+    ];
+
+    let bestIdx = 0;
+    let bestTotal = rows[0].total ?? Infinity;
+    rows.forEach((r, i) => {
+      if (r.total != null && r.total < bestTotal) { bestTotal = r.total; bestIdx = i; }
+    });
+
+    return { rows, bestIdx };
+  }, [basketTotals, preferredStoreName_col, oneStoreName_col]);
 
   const recommendations = useMemo(() => {
     if (!preferredStoreId) return [];
@@ -484,8 +446,8 @@ const ComparisonScreen = () => {
                   <TableCell className="text-xs">{row.oneStorePrice}</TableCell>
                   <TableCell className="text-xs">
                     <span className="font-medium">{row.multiShopPrice}</span>
-                    {row.multiShopStore !== '—' && (
-                      <span className="block text-[0.65rem] text-muted-foreground">{row.multiShopStore}</span>
+                    {row.multiShopStore && row.multiShopStore !== '—' && (
+                      <span className="block text-xs text-muted-foreground leading-tight">{row.multiShopStore}</span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -501,6 +463,44 @@ const ComparisonScreen = () => {
             </TableFooter>
           </Table>
           <p className="text-xs text-muted-foreground mt-3">— : item not available at this store</p>
+        </div>
+      )}
+
+      {/* Savings Summary */}
+      {unifiedRows.length > 0 && (
+        <div className="ios-card mt-4">
+          <p className="text-sm font-semibold text-foreground mb-1">Savings Summary</p>
+          <p className="text-xs text-muted-foreground mb-3">Basket cost across shopping strategies</p>
+          <div>
+            {savingsSummary.rows.map((entry, i) => (
+              <div
+                key={entry.label}
+                className={`flex items-center justify-between py-2.5 border-b border-border/40 last:border-0 ${
+                  i === savingsSummary.bestIdx ? 'rounded-lg bg-green-50 -mx-4 px-4' : ''
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-foreground truncate">{entry.label}</p>
+                  {entry.isBaseline && (
+                    <p className="text-[0.6rem] text-muted-foreground leading-none mt-0.5">your store · baseline</p>
+                  )}
+                  {i === savingsSummary.bestIdx && !entry.isBaseline && (
+                    <p className="text-[0.6rem] text-green-600 font-semibold leading-none mt-0.5 uppercase tracking-wide">Best Deal</p>
+                  )}
+                </div>
+                <div className="text-right ml-4 shrink-0">
+                  <p className="text-xs font-bold text-foreground">
+                    {entry.total != null ? `$${entry.total.toFixed(2)}` : '—'}
+                  </p>
+                  {entry.savingsVsPref != null && entry.savingsVsPref > 0 && (
+                    <p className="text-[0.65rem] text-green-600 font-semibold leading-none mt-0.5">
+                      Save ${entry.savingsVsPref.toFixed(2)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

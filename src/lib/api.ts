@@ -24,6 +24,7 @@ interface AuthResponse {
     email?: string;
     preferredStore?: string;
     zipCode?: string;
+    lastScannedAt?: string | null;
   };
 }
 
@@ -144,9 +145,10 @@ class ApiService {
   }
 
   private persistActiveUserSession(user: AuthResponse['user']) {
+    const phone = this.normalizePhoneNumber(this.toSafeString(user.phoneNumber));
     const session: StoredSessionUser = {
       id: this.toSafeString(user.id),
-      phoneNumber: this.normalizePhoneNumber(this.toSafeString(user.phoneNumber)),
+      phoneNumber: phone,
       email: this.normalizeEmail(this.toSafeString(user.email)),
       preferredStore: this.toSafeString(user.preferredStore),
       zipCode: this.normalizeZipCode(user.zipCode),
@@ -154,6 +156,11 @@ class ApiService {
 
     localStorage.setItem('smartCartSession', JSON.stringify(session));
     localStorage.setItem('smartCartUser', JSON.stringify(session));
+
+    // Sync last-scan timestamp from DB so ScanGuard works on every device/session
+    if (user.lastScannedAt) {
+      localStorage.setItem('smartCartLastScan', JSON.stringify({ userKey: phone, timestamp: user.lastScannedAt }));
+    }
   }
 
   private syncStoredProfileFields(fields: { pin?: string; preferredStore?: string }, baseUser?: AuthResponse['user']) {
@@ -425,6 +432,7 @@ class ApiService {
       }),
     });
     if (!response.error) {
+      if (response.data?.user) this.persistActiveUserSession(response.data.user);
       void this.flushPendingRegistrations();
       return response;
     }
@@ -497,6 +505,9 @@ class ApiService {
 
     if (!response.error) {
       // OTP flow: backend returned { otpRequired: true } — do not set token yet
+      if (response.data && 'user' in response.data && response.data.user) {
+        this.persistActiveUserSession(response.data.user as AuthResponse['user']);
+      }
       return response;
     }
 

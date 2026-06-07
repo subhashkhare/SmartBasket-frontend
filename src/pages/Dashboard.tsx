@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ReceiptText, TrendingUp } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 import { apiService } from '@/lib/api';
 
 interface ReceiptEntry {
@@ -144,6 +144,7 @@ const Dashboard = () => {
           }
         }
 
+        // Primary: items where preferred store is pricier than another store (max savings first)
         const items: TrendingItem[] = prices
           .map((p) => {
             const allEntries = Object.entries(p.prices || {})
@@ -190,7 +191,30 @@ const Dashboard = () => {
           })
           .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
           .sort((a, b) => b.savings - a.savings || b.storeCount - a.storeCount)
-          .slice(0, 5);
+          .slice(0, 10);
+
+        // Fallback: if no cross-store savings found, show items from user's own receipts
+        if (items.length === 0 && receiptsResp.data?.length) {
+          const seen = new Set<string>();
+          for (const receipt of receiptsResp.data) {
+            for (const item of receipt.items) {
+              const key = (item.itemName || '').toLowerCase();
+              if (!key || seen.has(key)) continue;
+              seen.add(key);
+              items.push({
+                itemName: item.itemName,
+                preferredPrice: item.unitPrice,
+                cheapestPrice: item.unitPrice,
+                cheapestStore: receipt.storeName || '',
+                savings: 0,
+                storeCount: 1,
+                quantity: item.quantity ?? 1,
+              });
+              if (items.length >= 10) break;
+            }
+            if (items.length >= 10) break;
+          }
+        }
 
         setTrendingItems(items);
       } catch {
@@ -245,9 +269,7 @@ const Dashboard = () => {
               <thead>
                 <tr className="border-b border-border">
                   <th className="w-6 pb-2 pr-2" />
-                  <th className="text-left text-xs text-muted-foreground font-medium pb-2 pr-3">Item</th>
-                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 pr-3 whitespace-nowrap">Qty</th>
-                  <th className="text-right text-xs text-muted-foreground font-medium pb-2 whitespace-nowrap">Save</th>
+                  <th className="text-left text-xs text-muted-foreground font-medium pb-2">Item</th>
                 </tr>
               </thead>
               <tbody>
@@ -267,14 +289,8 @@ const Dashboard = () => {
                           className="w-3.5 h-3.5 accent-primary cursor-pointer"
                         />
                       </td>
-                      <td className={`py-2 pr-3 text-xs font-medium max-w-[110px] truncate ${checked ? 'text-primary' : 'text-foreground'}`}>
+                      <td className={`py-2 text-xs font-medium max-w-[160px] truncate ${checked ? 'text-primary' : 'text-foreground'}`}>
                         {toTitleCase(item.itemName)}
-                      </td>
-                      <td className="py-2 pr-3 text-xs text-muted-foreground text-right whitespace-nowrap">
-                        {item.quantity}
-                      </td>
-                      <td className="py-2 text-xs font-semibold text-green-600 text-right whitespace-nowrap">
-                        {item.savings > 0 ? `-$${item.savings.toFixed(2)}` : '—'}
                       </td>
                     </tr>
                   );
@@ -282,6 +298,15 @@ const Dashboard = () => {
               </tbody>
             </table>
           </div>
+        )}
+
+        {checkedNames.size > 0 && (
+          <button
+            onClick={() => navigate('/compare')}
+            className="mt-4 w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold text-sm active:scale-[0.97] transition-transform"
+          >
+            Compare Price
+          </button>
         )}
       </div>
 

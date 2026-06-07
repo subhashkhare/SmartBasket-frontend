@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Camera, CheckCircle2, RotateCcw, ImageIcon, Trash2, Plus } from 'lucide-react';
 import {
   extractReceiptData,
@@ -18,6 +19,7 @@ const toTitleCase = (str: string) =>
 const RING_CIRCUMFERENCE = 2 * Math.PI * 36;
 
 const ScannerView = () => {
+  const navigate = useNavigate();
   const [scanState, setScanState] = useState<ScanState>('idle');
   const [progress, setProgress] = useState(0);
   const [receipt, setReceipt] = useState<ParsedReceipt | null>(null);
@@ -228,7 +230,14 @@ const ScannerView = () => {
       if (result.error) { setError(result.error); return; }
       if (result.data?.alreadyExists) { setDuplicateAlert(true); return; }
 
+      try {
+        const s = localStorage.getItem('smartCartSession') || localStorage.getItem('smartCartUser');
+        const userKey = s ? (JSON.parse(s).phoneNumber || JSON.parse(s).id || '') : '';
+        localStorage.setItem('smartCartLastScan', JSON.stringify({ userKey, timestamp: new Date().toISOString() }));
+      } catch { /* ignore storage errors */ }
+
       setSaveMessage(`Saved ${validItems.length} items successfully.`);
+      setTimeout(() => navigate('/'), 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {

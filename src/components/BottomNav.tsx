@@ -1,11 +1,10 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Home, Camera, ShoppingCart, BarChart3, Settings } from 'lucide-react';
+import { Home, Camera, BarChart3, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const tabs = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/scanner', icon: Camera, label: 'Scan' },
-  { to: '/list', icon: ShoppingCart, label: 'List' },
   { to: '/compare', icon: BarChart3, label: 'Compare' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];

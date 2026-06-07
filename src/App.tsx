@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,15 +9,35 @@ import Header from "@/components/Header";
 import PageTransition from "@/components/PageTransition";
 import Dashboard from "@/pages/Dashboard";
 import ScannerView from "@/pages/ScannerView";
-import ShoppingList from "@/pages/ShoppingList";
 import ComparisonScreen from "@/pages/ComparisonScreen";
 import StoreMap from "@/pages/StoreMap";
 import SettingsPage from "@/pages/SettingsPage";
 import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound.tsx";
 import { apiService } from "@/lib/api";
+import { getPostLoginDest } from "@/lib/utils";
 
 const queryClient = new QueryClient();
+
+// On every navigation, redirects to /scanner if the user has not scanned a
+// receipt within the last 15 days. Skips the check when already on /scanner.
+function ScanGuard() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname === '/scanner') return;
+    try {
+      const s = localStorage.getItem('smartCartSession') || localStorage.getItem('smartCartUser');
+      const phone = s ? (JSON.parse(s).phoneNumber || '') : '';
+      if (getPostLoginDest(phone) === '/scanner') {
+        navigate('/scanner', { replace: true });
+      }
+    } catch { /* ignore */ }
+  }, [navigate, location.pathname]);
+
+  return null;
+}
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -60,12 +80,13 @@ const App = () => {
           <a href="#main-content" className="skip-link">Skip to main content</a>
           {isAuthenticated ? (
             <div className="app-shell">
+              <ScanGuard />
               <main id="main-content" tabIndex={-1}>
                 <PageTransition>
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/scanner" element={<ScannerView />} />
-                    <Route path="/list" element={<ShoppingList />} />
+                    <Route path="/list" element={<Navigate to="/" replace />} />
                     <Route path="/compare" element={<ComparisonScreen />} />
                     <Route path="/map" element={<StoreMap />} />
                     <Route path="/settings" element={<SettingsPage />} />

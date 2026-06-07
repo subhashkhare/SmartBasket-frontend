@@ -100,17 +100,19 @@ function parseClaudeResponse(responseText: string): any {
       dateTime: parsed.dateTime || fallback.dateTime,
       coordinates: parsed.coordinates || fallback.coordinates,
       items: Array.isArray(parsed.items)
-        ? parsed.items.map((item: any) => {
-            const qty = Math.max(0.001, Number(item.quantity) || 1);
-            const total = Number(item.totalPrice) || 0;
-            return {
-              name: item.name || 'Unknown Item',
-              quantityLabel: item.quantityLabel || String(item.quantity ?? 1),
-              quantity: qty,
-              unitPrice: parseFloat((total / qty).toFixed(2)),
-              totalPrice: total,
-            };
-          })
+        ? parsed.items
+            .filter((item: any) => item.name && String(item.name).trim().length > 0)
+            .map((item: any) => {
+              const qty = Math.max(0.001, Number(item.quantity) || 1);
+              const total = Number(item.totalPrice) || 0;
+              return {
+                name: String(item.name).trim(),
+                quantityLabel: item.quantityLabel || String(item.quantity ?? 1),
+                quantity: qty,
+                unitPrice: parseFloat((total / qty).toFixed(2)),
+                totalPrice: total,
+              };
+            })
         : fallback.items,
       subtotal: parsed.subtotal ? Number(parsed.subtotal) : fallback.subtotal,
       tax: parsed.tax ? Number(parsed.tax) : fallback.tax,
@@ -225,19 +227,20 @@ export async function extractReceiptWithClaude(
             },
             {
               type: 'text',
-              text: `You are a market analyst. Review the attached receipt image and extract the information below in strict JSON format only. Do not add any extra explanation.
+              text: `You are a receipt data extractor. Look at the receipt image and extract ONLY data that is literally printed and visible on the receipt. Do not infer, guess, or fabricate any data. If a field is not visible on the receipt, use "" or 0.
+
+Return strict JSON only, no explanation:
 
 {
-  "storeName": "Store name",
-  "storeAddress": "Full address",
-  "zipCode": "ZIP code",
-  "phone": "Phone number",
-  "dateTime": "Date and time",
-  "location": "City, state",
-  "coordinates": "Latitude, longitude",
+  "storeName": "",
+  "storeAddress": "",
+  "zipCode": "",
+  "phone": "",
+  "dateTime": "",
+  "location": "",
   "items": [
     {
-      "name": "Item name",
+      "name": "",
       "quantityLabel": "1",
       "quantity": 1,
       "unitPrice": 0.00,
@@ -249,15 +252,17 @@ export async function extractReceiptWithClaude(
   "total": 0.00
 }
 
-- Every item must have quantityLabel, quantity, unitPrice, and totalPrice.
-- quantityLabel: human-readable string shown on the receipt or in the item name — e.g. "400 g", "1 kg", "4 lb", "1.43 lb", "2". For a plain single unit with no weight/count, use "1".
-- quantity: numeric value for calculation — weight or count as a number (e.g. 1.43 for "1.43 lb", 2 for "2 units", 1 for a single package regardless of package weight).
-- unitPrice: price per unit/lb/kg. If not printed, compute as totalPrice / quantity (never leave 0 when total is known).
+Rules:
+- ONLY extract what is physically printed on the receipt. Never invent or estimate missing values.
+- items: only actual purchased items. Exclude total lines, tax lines, payment lines, and receipt codes.
+- quantityLabel: exactly as printed on the receipt (e.g. "1.43 lb", "400 g", "2"). Use "1" for a plain single-unit item.
+- quantity: numeric value (e.g. 1.43 for "1.43 lb", 2 for "2 items", 1 for a single package).
+- unitPrice: price per unit as printed. If not printed, compute totalPrice / quantity.
+- totalPrice: line total as printed on the receipt.
 - For weighted items (e.g. "1.43 lb @ $0.99/lb"): quantityLabel="1.43 lb", quantity=1.43, unitPrice=0.99.
-- For package-weight items (e.g. "ITEM 400G $4.49"): quantityLabel="400 g", quantity=1, unitPrice=totalPrice.
-- For multi-pack items (e.g. "2 WHEAT ROTI 10CT $4.99 each"): quantityLabel="2", quantity=2, unitPrice=4.99.
-- Extract store name, address, ZIP, phone, date & time, and coordinates.
-- Return valid JSON only, nothing else.`,
+- For package-weight items (e.g. "ITEM 400G $4.49"): quantityLabel="400 g", quantity=1, unitPrice=4.49.
+- For multi-pack (e.g. "2 WHEAT ROTI $4.99 ea"): quantityLabel="2", quantity=2, unitPrice=4.99.
+- Return valid JSON only.`,
             },
           ],
         },
@@ -290,29 +295,31 @@ export async function extractReceiptWithClaude(
       };
     }
 
-    // Validate and clean the response
+    // Validate and clean the response — never substitute invented values
     const receipt: ParsedReceipt = {
-      storeName: parsedData.storeName || 'Unknown Store',
+      storeName: parsedData.storeName || '',
       storeAddress: parsedData.storeAddress || '',
       location: parsedData.location || '',
       zipCode: parsedData.zipCode,
       phone: parsedData.phone || '',
-      date: parsedData.dateTime ? parsedData.dateTime : new Date().toISOString().split('T')[0],
+      date: parsedData.dateTime || '',
       dateTime: parsedData.dateTime || '',
-      coordinates: parsedData.coordinates || '',
-      items: (parsedData.items || []).map((item: any, index: number) => {
-        const qty = Math.max(0.001, parseFloat(item.quantity) || 1);
-        const total = parseFloat(item.totalPrice) || 0;
-        return {
-          id: `item-${index + 1}`,
-          name: item.name || 'Unknown Item',
-          quantityLabel: item.quantityLabel || String(item.quantity ?? 1),
-          quantity: qty,
-          unitPrice: parseFloat((total / qty).toFixed(2)),
-          totalPrice: total,
-          confidence: 0.95,
-        };
-      }),
+      coordinates: '',
+      items: (parsedData.items || [])
+        .filter((item: any) => item.name && String(item.name).trim().length > 0)
+        .map((item: any, index: number) => {
+          const qty = Math.max(0.001, parseFloat(item.quantity) || 1);
+          const total = parseFloat(item.totalPrice) || 0;
+          return {
+            id: `item-${index + 1}`,
+            name: String(item.name).trim(),
+            quantityLabel: item.quantityLabel || String(item.quantity ?? 1),
+            quantity: qty,
+            unitPrice: parseFloat((total / qty).toFixed(2)),
+            totalPrice: total,
+            confidence: 0.95,
+          };
+        }),
       subtotal: parsedData.subtotal || 0,
       tax: 0, // Not extracted in new prompt
       total: parsedData.total || 0,
@@ -428,15 +435,21 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     }
   }
   if (storeName === 'Unknown Store' && lines.length > 0) {
-    storeName = lines[0].substring(0, 30);
+    const firstLine = lines[0].trim();
+    // Only use first line if it looks like a store name (letters, not a price or address)
+    if (firstLine.length >= 3 && !/^\d/.test(firstLine) && !/\$/.test(firstLine)) {
+      storeName = firstLine.substring(0, 40);
+    } else {
+      storeName = '';
+    }
   }
 
   const zipCode = extractZipCode(lines.join(' '));
   const storeAddress = extractAddress(lines);
   const location = extractLocation(lines, storeAddress);
 
-  // Try to find a date (MM/DD/YYYY or MM-DD-YYYY patterns)
-  let date = new Date().toISOString().split('T')[0];
+  // Try to find a date (MM/DD/YYYY or MM-DD-YYYY patterns) — leave empty if not found
+  let date = '';
   const dateRegex = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/;
   for (const line of lines) {
     const m = line.match(dateRegex);

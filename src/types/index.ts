@@ -32,6 +32,7 @@ export interface PriceObservation {
   itemName: string;
   itemId?: string;
   prices?: Record<string, number>;
+  storeNames?: Record<string, string>;
   userId?: string;
   receiptDate?: string;
   price?: number;

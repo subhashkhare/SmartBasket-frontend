@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ShoppingCart, Eye, EyeOff } from 'lucide-react';
 import { apiService } from '@/lib/api';
+import { getPostLoginDest } from '@/lib/utils';
 import { Store as AppStore } from '@/types';
 
 type AuthMode = 'sign-in' | 'register';
@@ -31,12 +32,18 @@ const Registration = () => {
   const [storeSuggestions, setStoreSuggestions] = useState<AppStore[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [storeSuggestionsLoading, setStoreSuggestionsLoading] = useState(false);
+  const skipStoreSearch = useRef(false);
 
   useEffect(() => {
     setMode('register');
   }, []);
 
   useEffect(() => {
+    if (skipStoreSearch.current) {
+      skipStoreSearch.current = false;
+      return;
+    }
+
     if (storeInput.length < 3 || !/^\d{5}$/.test(formData.zipCode)) {
       setStoreSuggestions([]);
       setShowSuggestions(false);
@@ -135,7 +142,7 @@ const Registration = () => {
 
       if (response.data) {
         apiService.setToken(response.data.token);
-        globalThis.location.href = '/';
+        globalThis.location.href = getPostLoginDest(formData.phoneNumber, response.data.user?.lastScannedAt);
       }
     } catch (err: unknown) {
       console.error(err);
@@ -171,9 +178,9 @@ const Registration = () => {
         return;
       }
 
-      if (response.data) {
+      if (response.data && 'token' in response.data) {
         apiService.setToken(response.data.token);
-        globalThis.location.href = '/';
+        globalThis.location.href = getPostLoginDest(formData.phoneNumber, response.data.user?.lastScannedAt);
       }
     } catch (err: unknown) {
       console.error(err);
@@ -364,6 +371,7 @@ const Registration = () => {
                     <li
                       key={store._id || store.id}
                       onMouseDown={() => {
+                        skipStoreSearch.current = true;
                         setStoreInput(store.name);
                         setFormData(prev => ({ ...prev, preferredStore: store.name }));
                         setShowSuggestions(false);

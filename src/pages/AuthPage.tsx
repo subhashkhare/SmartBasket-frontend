@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { CheckCircle2 } from 'lucide-react';
 import { apiService } from '@/lib/api';
 import { Store as AppStore } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -8,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
+import { getPostLoginDest } from '@/lib/utils';
 
 type LoginFormErrors = {
   phoneNumber?: string;
@@ -40,6 +43,13 @@ export default function AuthPage() {
   const [otpPhone, setOtpPhone] = useState<string | null>(null);
   const [otpErrors, setOtpErrors] = useState<OtpFormErrors>({});
   const showLoginPrompt = searchParams.get('next') === 'login';
+  const [showSuccessOverlay, setShowSuccessOverlay] = useState(showLoginPrompt);
+
+  useEffect(() => {
+    if (!showLoginPrompt) return;
+    const t = setTimeout(() => setShowSuccessOverlay(false), 3500);
+    return () => clearTimeout(t);
+  }, [showLoginPrompt]);
 
   const [zipCodeValue, setZipCodeValue] = useState('');
   const [zipLocation, setZipLocation] = useState('');
@@ -178,7 +188,7 @@ export default function AuthPage() {
       } else if ('token' in result.data) {
         apiService.setToken(result.data.token);
         toast.success('Login successful!');
-        globalThis.location.href = '/';
+        globalThis.location.href = getPostLoginDest(phoneNumber, result.data.user?.lastScannedAt);
       }
     }
 
@@ -206,7 +216,7 @@ export default function AuthPage() {
       toast.error(result.error);
     } else if (result.data) {
       toast.success('Login successful!');
-      globalThis.location.href = '/';
+      globalThis.location.href = getPostLoginDest(otpPhone!, result.data.user?.lastScannedAt);
     }
 
     setIsLoading(false);
@@ -267,17 +277,51 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+
+      {/* Registration success overlay */}
+      <AnimatePresence>
+        {showSuccessOverlay && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4"
+            onClick={() => setShowSuccessOverlay(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.85, opacity: 0, y: 20 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center"
+            >
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                  <CheckCircle2 size={36} className="text-green-600" />
+                </div>
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Registration Successful!</h2>
+              <p className="text-sm text-gray-500 mb-6">
+                Your account has been created. Log in with your phone number and PIN to continue.
+              </p>
+              <button
+                onClick={() => setShowSuccessOverlay(false)}
+                className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold text-sm active:scale-[0.97] transition-transform"
+              >
+                Continue to Login
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl text-center">Smart Cart Saver</CardTitle>
           <CardDescription className="text-center">
             Save money on groceries with smart price comparison
           </CardDescription>
-          {showLoginPrompt && (
-            <p className="text-center text-sm text-primary font-medium">
-              Registration complete. Log in using your phone number and PIN.
-            </p>
-          )}
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
