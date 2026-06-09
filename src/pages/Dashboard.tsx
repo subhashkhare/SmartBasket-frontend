@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp } from 'lucide-react';
 import { apiService } from '@/lib/api';
+import { getLocalLastScan } from '@/lib/utils';
 
 interface ReceiptEntry {
   id: string;
@@ -72,6 +73,17 @@ const Dashboard = () => {
   const [checkedNames, setCheckedNames] = useState<Set<string>>(
     () => new Set(readShoppingList().map((i) => i.name.toLowerCase()))
   );
+
+  const scanReminder = useMemo(() => {
+    try {
+      const s = localStorage.getItem('smartCartSession') || localStorage.getItem('smartCartUser');
+      const phone = s ? (JSON.parse(s).phoneNumber || '') : '';
+      const local = getLocalLastScan(phone);
+      if (!local || local.days > 15) return null;
+      const deadline = new Date(new Date(local.timestamp).getTime() + 15 * 86_400_000);
+      return deadline.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch { return null; }
+  }, []);
 
   const toggleShoppingItem = (item: TrendingItem) => {
     const key = item.itemName.toLowerCase();
@@ -191,7 +203,7 @@ const Dashboard = () => {
           })
           .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
           .sort((a, b) => b.savings - a.savings || b.storeCount - a.storeCount)
-          .slice(0, 10);
+          .slice(0, 5);
 
         // Fallback: if no cross-store savings found, show items from user's own receipts
         if (items.length === 0 && receiptsResp.data?.length) {
@@ -210,10 +222,38 @@ const Dashboard = () => {
                 storeCount: 1,
                 quantity: item.quantity ?? 1,
               });
-              if (items.length >= 10) break;
+              if (items.length >= 5) break;
             }
-            if (items.length >= 10) break;
+            if (items.length >= 5) break;
           }
+        }
+
+        // Fallback for new users: top 5 items by max price spread across all stores
+        if (items.length === 0) {
+          const spreadItems = prices
+            .map((p) => {
+              const allEntries = Object.entries(p.prices || {})
+                .map(([id, v]) => [id, Number(v)] as [string, number])
+                .filter(([, v]) => v > 0);
+              if (allEntries.length < 2) return null;
+              const maxPrice = Math.max(...allEntries.map(([, v]) => v));
+              const [cheapestId, minPrice] = allEntries.reduce((min, e) => e[1] < min[1] ? e : min);
+              const spread = maxPrice - minPrice;
+              if (spread <= 0) return null;
+              return {
+                itemName: p.itemName || '',
+                preferredPrice: maxPrice,
+                cheapestPrice: minPrice,
+                cheapestStore: storeMap.get(cheapestId) || '',
+                savings: spread,
+                storeCount: allEntries.length,
+                quantity: 1,
+              };
+            })
+            .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
+            .sort((a, b) => b.savings - a.savings)
+            .slice(0, 5);
+          items.push(...spreadItems);
         }
 
         setTrendingItems(items);
@@ -238,6 +278,16 @@ const Dashboard = () => {
         </button>{' '}
         to track your spending.
       </p> */}
+
+      {scanReminder && (
+        <div className="ios-card mb-4 border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-amber-800">
+            Scan a new receipt by{' '}
+            <span className="font-semibold">{scanReminder}</span>{' '}
+            to keep your price data fresh.
+          </p>
+        </div>
+      )}
 
       {/* Top Tracked Items */}
       <div className="ios-card mb-4">

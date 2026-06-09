@@ -10,25 +10,66 @@ function normalizePhone(phone: string): string {
   return d.length === 11 && d.startsWith('1') ? d.slice(1) : d;
 }
 
-/** Returns '/scanner' if the user has no receipt within 15 days, otherwise '/'. */
-export function getPostLoginDest(rawPhone: string, lastScannedAt?: string | null): '/' | '/scanner' {
-  const withinDays = (iso: string) =>
-    (Date.now() - new Date(iso).getTime()) / 86_400_000 <= 15;
+function daysSince(iso: string): number {
+  return (Date.now() - new Date(iso).getTime()) / 86_400_000;
+}
 
-  // 1. Trust the DB value if the server returned one
-  if (lastScannedAt) return withinDays(lastScannedAt) ? '/' : '/scanner';
+export type ScanState = 'new' | 'recent' | 'stale' | 'locked';
 
-  // 2. Fall back to localStorage stamp written by ScannerView
+function stateFromDays(days: number): Exclude<ScanState, 'new'> {
+  if (days <= 15) return 'recent';
+  if (days <= 60) return 'stale';
+  return 'locked';
+}
+
+/** Reads the last-scan timestamp from localStorage for the given phone. */
+export function getLocalLastScan(rawPhone: string): { days: number; timestamp: string } | null {
   try {
     const phone = normalizePhone(rawPhone);
     const raw = globalThis.localStorage?.getItem('smartCartLastScan');
-    if (raw) {
-      const { userKey, timestamp } = JSON.parse(raw) as { userKey: string; timestamp: string };
-      if (normalizePhone(userKey) === phone) {
-        return withinDays(timestamp) ? '/' : '/scanner';
-      }
-    }
-  } catch { /* ignore */ }
+    if (!raw) return null;
+    const { userKey, timestamp } = JSON.parse(raw) as { userKey: string; timestamp: string };
+    if (normalizePhone(userKey) !== phone) return null;
+    return { days: daysSince(timestamp), timestamp };
+  } catch {
+    return null;
+  }
+}
 
-  return '/scanner';
+/**
+ * Saves the server's lastScannedAt to localStorage only when it's newer than what
+ * is already stored. Called right after login so ScanGuard works on any device.
+ */
+export function persistServerLastScan(rawPhone: string, lastScannedAt: string): void {
+  try {
+    const raw = globalThis.localStorage?.getItem('smartCartLastScan');
+    if (raw) {
+      const existing = JSON.parse(raw) as { userKey: string; timestamp: string };
+      if (new Date(existing.timestamp) >= new Date(lastScannedAt)) return;
+    }
+    globalThis.localStorage?.setItem('smartCartLastScan', JSON.stringify({
+      userKey: rawPhone,
+      timestamp: lastScannedAt,
+    }));
+  } catch { /* ignore */ }
+}
+
+/**
+ * Returns the user's scan state:
+ *   'new'    – never scanned
+ *   'recent' – scanned ≤ 15 days ago  → Dashboard + reminder
+ *   'stale'  – scanned 15–60 days ago → Scanner, free navigation
+ *   'locked' – scanned > 60 days ago  → Scanner, navigation blocked
+ */
+export function getScanState(rawPhone: string, lastScannedAt?: string | null): ScanState {
+  if (lastScannedAt) return stateFromDays(daysSince(lastScannedAt));
+  const local = getLocalLastScan(rawPhone);
+  if (local) return stateFromDays(local.days);
+  return 'new';
+}
+
+/** Returns '/' (Dashboard) for new/recent users, '/scanner' for stale/locked. */
+export function getPostLoginDest(rawPhone: string, lastScannedAt?: string | null): '/' | '/scanner' {
+  const state = getScanState(rawPhone, lastScannedAt);
+  return state === 'new' || state === 'recent' ? '/' : '/scanner';
 }

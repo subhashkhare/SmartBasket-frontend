@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { getPostLoginDest } from '@/lib/utils';
+import { getPostLoginDest, persistServerLastScan } from '@/lib/utils';
 
 type LoginFormErrors = {
   phoneNumber?: string;
@@ -187,6 +187,9 @@ export default function AuthPage() {
         toast.success('OTP sent to your WhatsApp. Enter it below.');
       } else if ('token' in result.data) {
         apiService.setToken(result.data.token);
+        if (result.data.user?.lastScannedAt) {
+          persistServerLastScan(phoneNumber, result.data.user.lastScannedAt);
+        }
         toast.success('Login successful!');
         globalThis.location.href = getPostLoginDest(phoneNumber, result.data.user?.lastScannedAt);
       }
@@ -215,6 +218,9 @@ export default function AuthPage() {
     if (result.error) {
       toast.error(result.error);
     } else if (result.data) {
+      if (result.data.user?.lastScannedAt) {
+        persistServerLastScan(otpPhone!, result.data.user.lastScannedAt);
+      }
       toast.success('Login successful!');
       globalThis.location.href = getPostLoginDest(otpPhone!, result.data.user?.lastScannedAt);
     }

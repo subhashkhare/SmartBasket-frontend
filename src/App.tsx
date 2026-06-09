@@ -15,12 +15,12 @@ import SettingsPage from "@/pages/SettingsPage";
 import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound.tsx";
 import { apiService } from "@/lib/api";
-import { getPostLoginDest } from "@/lib/utils";
+import { getScanState } from "@/lib/utils";
 
 const queryClient = new QueryClient();
 
-// On every navigation, redirects to /scanner if the user has not scanned a
-// receipt within the last 15 days. Skips the check when already on /scanner.
+// Blocks navigation away from /scanner when the user is in 'locked' state (>60 days since last scan).
+// Stale users (15–60 days) land on /scanner after login but can freely navigate thereafter.
 function ScanGuard() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -30,7 +30,7 @@ function ScanGuard() {
     try {
       const s = localStorage.getItem('smartCartSession') || localStorage.getItem('smartCartUser');
       const phone = s ? (JSON.parse(s).phoneNumber || '') : '';
-      if (getPostLoginDest(phone) === '/scanner') {
+      if (getScanState(phone) === 'locked') {
         navigate('/scanner', { replace: true });
       }
     } catch { /* ignore */ }

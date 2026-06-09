@@ -460,6 +460,20 @@ const ComparisonScreen = () => {
                 <TableCell className="font-bold text-xs">{basketTotals.oneStore}</TableCell>
                 <TableCell className="font-bold text-xs">{basketTotals.multiShop}</TableCell>
               </TableRow>
+              <TableRow>
+                <TableCell className="font-bold text-xs text-green-700">Savings</TableCell>
+                <TableCell className="text-xs text-muted-foreground">—</TableCell>
+                <TableCell className="text-xs font-semibold text-green-700">
+                  {savingsSummary.rows[1].savingsVsPref != null && savingsSummary.rows[1].savingsVsPref > 0
+                    ? `$${savingsSummary.rows[1].savingsVsPref.toFixed(2)}`
+                    : '—'}
+                </TableCell>
+                <TableCell className="text-xs font-semibold text-green-700">
+                  {savingsSummary.rows[2].savingsVsPref != null && savingsSummary.rows[2].savingsVsPref > 0
+                    ? `$${savingsSummary.rows[2].savingsVsPref.toFixed(2)}`
+                    : '—'}
+                </TableCell>
+              </TableRow>
             </TableFooter>
           </Table>
           <p className="text-xs text-muted-foreground mt-3">— : item not available at this store</p>
