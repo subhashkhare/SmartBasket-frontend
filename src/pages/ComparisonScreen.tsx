@@ -481,7 +481,7 @@ const ComparisonScreen = () => {
       )}
 
       {/* Savings Summary */}
-      {unifiedRows.length > 0 && (
+      {/* {unifiedRows.length > 0 && (
         <div className="ios-card mt-4">
           <p className="text-sm font-semibold text-foreground mb-1">Savings Summary</p>
           <p className="text-xs text-muted-foreground mb-3">Basket cost across shopping strategies</p>
@@ -516,7 +516,7 @@ const ComparisonScreen = () => {
             ))}
           </div>
         </div>
-      )}
+      )} */}
 
       {/* {recommendations.length > 0 && (
         <div className="ios-card mt-4">
