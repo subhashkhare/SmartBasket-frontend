@@ -264,7 +264,7 @@ const SettingsPage = () => {
       </div> */}
 
       {/* Preferences */}
-      <p className="section-title">Preferences</p>
+      {/* <p className="section-title">Preferences</p>
       <div className="ios-card mb-5 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -283,10 +283,10 @@ const SettingsPage = () => {
           </div>
           <span className="text-xs font-semibold text-muted-foreground bg-secondary px-3 py-1 rounded-full">Imperial (Lbs, Oz)</span>
         </div>
-      </div>
+      </div> */}
 
       {/* About */}
-      <p className="section-title">About</p>
+      {/* <p className="section-title">About</p>
       <div className="ios-card space-y-1">
         {[
           { label: 'Help & FAQ', icon: CircleHelp },
@@ -300,7 +300,7 @@ const SettingsPage = () => {
             <ChevronRight size={16} className="text-muted-foreground" />
           </button>
         ))}
-      </div>
+      </div> */}
 
       {/* Sign Out */}
       {/* <motion.button

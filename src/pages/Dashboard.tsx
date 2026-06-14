@@ -15,6 +15,7 @@ interface ReceiptEntry {
 
 interface TrendingItem {
   itemName: string;
+  itemId?: string;
   preferredPrice: number;
   cheapestPrice: number;
   cheapestStore: string;
@@ -96,6 +97,7 @@ const Dashboard = () => {
       writeShoppingList([...list, {
         id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         name: toTitleCase(item.itemName),
+        sourceItemId: item.itemId,
         quantity: 1,
         checked: false,
         bestPrice: item.cheapestPrice,
@@ -131,10 +133,9 @@ const Dashboard = () => {
     const loadTrending = async () => {
       setTrendingLoading(true);
       try {
-        const [pricesResp, storesResp, receiptsResp] = await Promise.all([
+        const [pricesResp, storesResp] = await Promise.all([
           apiService.getPrices(),
           apiService.getStores(),
-          apiService.getReceipts(),
         ]);
 
         const prices = pricesResp.data || [];
@@ -147,89 +148,47 @@ const Dashboard = () => {
           ? (stores.find((s) => (s.name || '').toLowerCase().trim() === preferredStoreName)?._id || null)
           : null;
 
-        // Build itemName → quantity from receipt items
-        const quantityMap = new Map<string, number>();
-        for (const receipt of (receiptsResp.data || [])) {
-          for (const item of receipt.items) {
-            const key = item.itemName.toLowerCase();
-            if (!quantityMap.has(key)) quantityMap.set(key, item.quantity ?? 1);
-          }
-        }
+        // Items that MUST be available at the preferred store, sorted by max price
+        // difference (preferred store price − cheapest other store price).
+        // When no preferred store is set, the spread fallback below handles display.
+        const items: TrendingItem[] = preferredStoreId
+          ? prices
+              .map((p): TrendingItem | null => {
+                const allEntries = Object.entries(p.prices || {})
+                  .map(([id, v]) => [id, Number(v)] as [string, number])
+                  .filter(([, v]) => v > 0);
+                if (!allEntries.length) return null;
 
-        // Primary: items where preferred store is pricier than another store (max savings first)
-        const items: TrendingItem[] = prices
-          .map((p) => {
-            const allEntries = Object.entries(p.prices || {})
-              .map(([id, v]) => [id, Number(v)] as [string, number])
-              .filter(([, v]) => v > 0);
-            if (!allEntries.length) return null;
+                const preferredEntry = allEntries.find(([id]) => id === preferredStoreId);
+                if (!preferredEntry) return null; // must be at preferred store
 
-            const quantity = quantityMap.get((p.itemName || '').toLowerCase()) ?? 1;
+                const otherEntries = allEntries.filter(([id]) => id !== preferredStoreId);
+                if (!otherEntries.length) return null;
 
-            if (preferredStoreId) {
-              const preferredEntry = allEntries.find(([id]) => id === preferredStoreId);
-              if (!preferredEntry) return null;
-              const otherEntries = allEntries.filter(([id]) => id !== preferredStoreId);
-              if (!otherEntries.length) return null;
-              const [cheapestOtherId, cheapestOtherPrice] = otherEntries.reduce(
-                (min, e) => (e[1] < min[1] ? e : min)
-              );
-              const savings = preferredEntry[1] - cheapestOtherPrice;
-              if (savings <= 0) return null;
-              return {
-                itemName: p.itemName || '',
-                preferredPrice: preferredEntry[1],
-                cheapestPrice: cheapestOtherPrice,
-                cheapestStore: storeMap.get(cheapestOtherId) || 'Unknown',
-                savings,
-                storeCount: allEntries.length,
-                quantity,
-              };
-            }
+                const [cheapestOtherId, cheapestOtherPrice] = otherEntries.reduce(
+                  (min, e) => (e[1] < min[1] ? e : min)
+                );
+                const savings = preferredEntry[1] - cheapestOtherPrice;
+                if (savings <= 0) return null;
 
-            // No preferred store — fall back to most-tracked items
-            const [cheapestStoreId, cheapestPrice] = allEntries.reduce(
-              (min, e) => (e[1] < min[1] ? e : min)
-            );
-            return {
-              itemName: p.itemName || '',
-              preferredPrice: 0,
-              cheapestPrice,
-              cheapestStore: storeMap.get(cheapestStoreId) || 'Unknown',
-              savings: 0,
-              storeCount: allEntries.length,
-              quantity,
-            };
-          })
-          .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
-          .sort((a, b) => b.savings - a.savings || b.storeCount - a.storeCount)
-          .slice(0, 5);
+                return {
+                  itemName: p.itemName || '',
+                  itemId: p.itemId || p._id,
+                  preferredPrice: preferredEntry[1],
+                  cheapestPrice: cheapestOtherPrice,
+                  cheapestStore: p.storeNames?.[cheapestOtherId] || storeMap.get(cheapestOtherId) || '',
+                  savings,
+                  storeCount: allEntries.length,
+                  quantity: 1,
+                };
+              })
+              .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
+              .sort((a, b) => b.savings - a.savings)
+              .slice(0, 5)
+          : [];
 
-        // Fallback: if no cross-store savings found, show items from user's own receipts
-        if (items.length === 0 && receiptsResp.data?.length) {
-          const seen = new Set<string>();
-          for (const receipt of receiptsResp.data) {
-            for (const item of receipt.items) {
-              const key = (item.itemName || '').toLowerCase();
-              if (!key || seen.has(key)) continue;
-              seen.add(key);
-              items.push({
-                itemName: item.itemName,
-                preferredPrice: item.unitPrice,
-                cheapestPrice: item.unitPrice,
-                cheapestStore: receipt.storeName || '',
-                savings: 0,
-                storeCount: 1,
-                quantity: item.quantity ?? 1,
-              });
-              if (items.length >= 5) break;
-            }
-            if (items.length >= 5) break;
-          }
-        }
-
-        // Fallback for new users: top 5 items by max price spread across all stores
-        if (items.length === 0) {
+        // Fallback (no preferred store): top 5 by max price spread across catalog
+        if (items.length === 0 && !preferredStoreId) {
           const spreadItems = prices
             .map((p) => {
               const allEntries = Object.entries(p.prices || {})
@@ -244,7 +203,7 @@ const Dashboard = () => {
                 itemName: p.itemName || '',
                 preferredPrice: maxPrice,
                 cheapestPrice: minPrice,
-                cheapestStore: storeMap.get(cheapestId) || '',
+                cheapestStore: p.storeNames?.[cheapestId] || storeMap.get(cheapestId) || '',
                 savings: spread,
                 storeCount: allEntries.length,
                 quantity: 1,
@@ -352,7 +311,22 @@ const Dashboard = () => {
 
         {checkedNames.size > 0 && (
           <button
-            onClick={() => navigate('/compare')}
+            onClick={() => {
+              // Replace session storage with exactly the currently-checked recommended items
+              const selected = trendingItems
+                .filter((item) => checkedNames.has(item.itemName.toLowerCase()))
+                .map((item, idx) => ({
+                  id: `item-${Date.now()}-${idx}`,
+                  name: toTitleCase(item.itemName),
+                  sourceItemId: item.itemId,
+                  quantity: 1,
+                  checked: false,
+                  bestPrice: item.cheapestPrice,
+                  bestStore: item.cheapestStore,
+                }));
+              writeShoppingList(selected);
+              navigate('/compare');
+            }}
             className="mt-4 w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold text-sm active:scale-[0.97] transition-transform"
           >
             Compare Price
