@@ -2,16 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp } from 'lucide-react';
 import { apiService } from '@/lib/api';
-import { getLocalLastScan } from '@/lib/utils';
-
-interface ReceiptEntry {
-  id: string;
-  userKey: string;
-  storeName: string;
-  date: string;
-  total: number;
-  status: string;
-}
+import { getLocalLastScan, getPreferredStoreName } from '@/lib/utils';
 
 interface TrendingItem {
   itemName: string;
@@ -42,33 +33,8 @@ function writeShoppingList(items: ReturnType<typeof readShoppingList>): void {
   globalThis.sessionStorage.setItem(SHOPPING_LIST_KEY, JSON.stringify(items));
 }
 
-function getCurrentUserKey(): string {
-  try {
-    const s = localStorage.getItem('smartCartSession') || localStorage.getItem('smartCartUser');
-    if (s) {
-      const p = JSON.parse(s);
-      return p.phoneNumber || p.id || p.email || 'unknown';
-    }
-  } catch {}
-  return 'unknown';
-}
-
-function getPreferredStoreName(): string {
-  try {
-    const s = localStorage.getItem('smartCartSession') || localStorage.getItem('smartCartUser');
-    if (s) return (JSON.parse(s).preferredStore || '').toLowerCase().trim();
-  } catch {}
-  return '';
-}
-
-function shortId(id: string): string {
-  const digits = id.replace(/\D/g, '');
-  return digits.length >= 6 ? `#${digits.slice(-6)}` : `#${id.slice(-6)}`;
-}
-
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [receipts, setReceipts] = useState<ReceiptEntry[]>([]);
   const [trendingItems, setTrendingItems] = useState<TrendingItem[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(true);
   const [checkedNames, setCheckedNames] = useState<Set<string>>(
@@ -108,28 +74,6 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
-    const load = () => {
-      try {
-        const raw = localStorage.getItem('smartCartReceiptHistory');
-        const all: ReceiptEntry[] = raw ? JSON.parse(raw) : [];
-        const userKey = getCurrentUserKey();
-        const oneMonthAgo = new Date();
-        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-        const cutoff = oneMonthAgo.toISOString().slice(0, 10);
-        const mine = all
-          .filter((r) => r.userKey === userKey && r.date >= cutoff)
-          .sort((a, b) => (b.date > a.date ? 1 : -1));
-        setReceipts(mine);
-      } catch {
-        setReceipts([]);
-      }
-    };
-    load();
-    window.addEventListener('focus', load);
-    return () => window.removeEventListener('focus', load);
-  }, []);
-
-  useEffect(() => {
     const loadTrending = async () => {
       setTrendingLoading(true);
       try {
@@ -143,7 +87,7 @@ const Dashboard = () => {
         const storeMap = new Map(stores.map((s) => [s._id || String(s.id), s.name]));
 
         // Find the user's preferred store ID
-        const preferredStoreName = getPreferredStoreName();
+        const preferredStoreName = getPreferredStoreName().toLowerCase();
         const preferredStoreId = preferredStoreName
           ? (stores.find((s) => (s.name || '').toLowerCase().trim() === preferredStoreName)?._id || null)
           : null;
@@ -169,7 +113,6 @@ const Dashboard = () => {
                   (min, e) => (e[1] < min[1] ? e : min)
                 );
                 const savings = preferredEntry[1] - cheapestOtherPrice;
-                if (savings <= 0) return null;
 
                 return {
                   itemName: p.itemName || '',

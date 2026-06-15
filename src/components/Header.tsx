@@ -12,15 +12,29 @@ const Header = () => {
   const firstMenuItemRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
-    const session = globalThis.localStorage.getItem('smartCartSession');
-    if (session) {
+    const raw = globalThis.localStorage.getItem('smartCartSession') || globalThis.localStorage.getItem('smartCartUser');
+    if (raw) {
       try {
-        const parsed = JSON.parse(session);
-        setUserData(parsed);
-      } catch (err) {
-        console.error('Failed to parse user data:', err);
-      }
+        setUserData(JSON.parse(raw));
+      } catch { /* ignore */ }
     }
+  }, []);
+
+  useEffect(() => {
+    const handleStore = (e: Event) => {
+      const name = (e as CustomEvent<{ name: string }>).detail.name;
+      setUserData(prev => prev ? { ...prev, preferredStore: name } : prev);
+    };
+    const handleZip = (e: Event) => {
+      const { zipCode } = (e as CustomEvent<{ zipCode: string }>).detail;
+      setUserData(prev => prev ? { ...prev, zipCode } : prev);
+    };
+    globalThis.addEventListener('preferredStoreChanged', handleStore);
+    globalThis.addEventListener('zipCodeChanged', handleZip);
+    return () => {
+      globalThis.removeEventListener('preferredStoreChanged', handleStore);
+      globalThis.removeEventListener('zipCodeChanged', handleZip);
+    };
   }, []);
 
   useEffect(() => {

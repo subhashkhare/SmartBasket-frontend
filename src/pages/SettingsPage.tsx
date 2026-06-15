@@ -3,27 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronRight, MapPin, CreditCard, Bell, Shield, CircleHelp, LogOut, Store, KeyRound, Check, AlertCircle } from 'lucide-react';
 import { apiService } from '@/lib/api';
+import { getPreferredStoreName, setPreferredStoreName, getZipCode, setZipCode } from '@/lib/utils';
 
 const DEFAULT_ZIP_CODE = '90210';
 const DEFAULT_SEARCH_RADIUS = 10;
 
 function getStoredLocationSettings(): { zipCode: string; searchRadius: number } {
+  const zipCode = getZipCode() || DEFAULT_ZIP_CODE;
   try {
-    const raw = globalThis.localStorage.getItem('smartCartSession');
-    if (!raw) {
-      return { zipCode: DEFAULT_ZIP_CODE, searchRadius: DEFAULT_SEARCH_RADIUS };
+    const raw = globalThis.localStorage.getItem('smartCartSession') || globalThis.localStorage.getItem('smartCartUser');
+    if (raw) {
+      const parsed = JSON.parse(raw) as { searchRadius?: unknown };
+      const parsedRadius = Number(parsed.searchRadius);
+      return { zipCode, searchRadius: Number.isFinite(parsedRadius) ? parsedRadius : DEFAULT_SEARCH_RADIUS };
     }
-
-    const parsed = JSON.parse(raw) as { zipCode?: string; searchRadius?: unknown };
-    const parsedRadius = Number(parsed.searchRadius);
-
-    return {
-      zipCode: parsed.zipCode || DEFAULT_ZIP_CODE,
-      searchRadius: Number.isFinite(parsedRadius) ? parsedRadius : DEFAULT_SEARCH_RADIUS,
-    };
-  } catch {
-    return { zipCode: DEFAULT_ZIP_CODE, searchRadius: DEFAULT_SEARCH_RADIUS };
-  }
+  } catch { /* ignore */ }
+  return { zipCode, searchRadius: DEFAULT_SEARCH_RADIUS };
 }
 
 const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) => (
@@ -71,15 +66,10 @@ const SettingsPage = () => {
   const [pinError, setPinError] = useState('');
   const [pinSaveMessage, setPinSaveMessage] = useState('');
 
-  const [preferredStore, setPreferredStore] = useState(() => {
-    try {
-      const raw = globalThis.localStorage.getItem('smartCartSession');
-      if (raw) return (JSON.parse(raw) as { preferredStore?: string }).preferredStore ?? '';
-    } catch { /* ignore */ }
-    return '';
-  });
+  const [preferredStore, setPreferredStore] = useState(() => getPreferredStoreName());
   const [storeSaveState, setStoreSaveState] = useState<SaveState>('idle');
   const [storeSaveMessage, setStoreSaveMessage] = useState('');
+  const [storeErrorMsg, setStoreErrorMsg] = useState('');
 
   const handleSignOut = () => {
     apiService.clearToken();
@@ -89,15 +79,15 @@ const SettingsPage = () => {
   };
 
   const persistLocationSettings = (nextZipCode: string, nextRadius: number) => {
-    try {
-      const raw = globalThis.localStorage.getItem('smartCartSession');
-      const session = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-      session.zipCode = nextZipCode.trim();
-      session.searchRadius = nextRadius;
-      globalThis.localStorage.setItem('smartCartSession', JSON.stringify(session));
-      globalThis.localStorage.setItem('smartCartUser', JSON.stringify(session));
-    } catch {
-      // ignore local persistence failures
+    setZipCode(nextZipCode);
+    for (const key of ['smartCartSession', 'smartCartUser']) {
+      try {
+        const raw = globalThis.localStorage.getItem(key);
+        if (!raw) continue;
+        const session = JSON.parse(raw) as Record<string, unknown>;
+        session.searchRadius = nextRadius;
+        globalThis.localStorage.setItem(key, JSON.stringify(session));
+      } catch { /* ignore */ }
     }
   };
 
@@ -125,19 +115,31 @@ const SettingsPage = () => {
     if (!preferredStore.trim()) return;
     setStoreSaveState('saving');
     setStoreSaveMessage('');
+    setStoreErrorMsg('');
+
+    const storesResp = await apiService.getStores();
+    const stores = storesResp.data || [];
+    const lower = preferredStore.trim().toLowerCase();
+    const found = stores.some((s) => {
+      const sLower = (s.name || '').toLowerCase();
+      return sLower === lower || sLower.includes(lower) || lower.includes(sLower);
+    });
+
+    if (!found) {
+      setStoreSaveState('error');
+      setStoreErrorMsg('Store data not available');
+      return;
+    }
+
     const result = await apiService.updateProfile({ preferredStore });
     if (result.error) {
       setStoreSaveState('error');
+      setStoreErrorMsg('Save failed');
     } else {
-      try {
-        const raw = globalThis.localStorage.getItem('smartCartSession');
-        const session = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-        session.preferredStore = preferredStore;
-        globalThis.localStorage.setItem('smartCartSession', JSON.stringify(session));
-      } catch { /* ignore */ }
+      setPreferredStoreName(preferredStore);
       setStoreSaveState('saved');
       setStoreSaveMessage(result.data?.saveMode === 'fallback' ? 'Saved locally' : 'Synced');
-        setTimeout(() => navigate('/compare'), 1500);
+      setTimeout(() => navigate('/'), 1500);
     }
   };
 
@@ -200,10 +202,10 @@ const SettingsPage = () => {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <SaveIndicator state={storeSaveState} errorMsg="Save failed" successMsg={storeSaveMessage} />
+            <SaveIndicator state={storeSaveState} errorMsg={storeErrorMsg} successMsg={storeSaveMessage} />
             <input
               value={preferredStore}
-              onChange={e => { setStoreSaveState('idle'); setStoreSaveMessage(''); setPreferredStore(e.target.value); }}
+              onChange={e => { setStoreSaveState('idle'); setStoreSaveMessage(''); setStoreErrorMsg(''); setPreferredStore(e.target.value); }}
               onBlur={handleStoreBlur}
               placeholder="e.g. Walmart"
               className="w-28 h-8 rounded-lg bg-secondary px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"

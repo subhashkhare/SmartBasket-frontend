@@ -55,6 +55,71 @@ export function persistServerLastScan(rawPhone: string, lastScannedAt: string): 
 }
 
 /**
+ * Returns the preferred store name from localStorage (raw casing, trimmed).
+ * Checks smartCartSession first, falls back to smartCartUser for legacy/offline data.
+ */
+export function getPreferredStoreName(): string {
+  try {
+    for (const key of ['smartCartSession', 'smartCartUser']) {
+      const raw = globalThis.localStorage?.getItem(key);
+      if (!raw) continue;
+      const val = (JSON.parse(raw) as { preferredStore?: string }).preferredStore;
+      if (val?.trim()) return val.trim();
+    }
+  } catch { /* ignore */ }
+  return '';
+}
+
+/** Reads the user's zip code from localStorage (trimmed). Checks smartCartSession first, falls back to smartCartUser. */
+export function getZipCode(): string {
+  try {
+    for (const key of ['smartCartSession', 'smartCartUser']) {
+      const raw = globalThis.localStorage?.getItem(key);
+      if (!raw) continue;
+      const val = (JSON.parse(raw) as { zipCode?: string }).zipCode;
+      if (val?.trim()) return val.trim();
+    }
+  } catch { /* ignore */ }
+  return '';
+}
+
+/**
+ * Writes zipCode to both localStorage keys and dispatches a `zipCodeChanged` event
+ * so components that stay mounted (e.g. Header) can react immediately.
+ */
+export function setZipCode(zip: string): void {
+  const trimmed = zip.trim();
+  for (const key of ['smartCartSession', 'smartCartUser']) {
+    try {
+      const raw = globalThis.localStorage?.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      parsed.zipCode = trimmed;
+      globalThis.localStorage?.setItem(key, JSON.stringify(parsed));
+    } catch { /* ignore */ }
+  }
+  globalThis.dispatchEvent?.(new CustomEvent('zipCodeChanged', { detail: { zipCode: trimmed } }));
+}
+
+/**
+ * Writes preferredStore to both localStorage keys so every screen stays in sync.
+ * Only updates keys that already exist (avoids creating orphan entries).
+ */
+export function setPreferredStoreName(name: string): void {
+  const trimmed = name.trim();
+  for (const key of ['smartCartSession', 'smartCartUser']) {
+    try {
+      const raw = globalThis.localStorage?.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      parsed.preferredStore = trimmed;
+      globalThis.localStorage?.setItem(key, JSON.stringify(parsed));
+    } catch { /* ignore */ }
+  }
+  globalThis.dispatchEvent?.(new CustomEvent('preferredStoreChanged', { detail: { name: trimmed } }));
+}
+
+/**
  * Returns the user's scan state:
  *   'new'    – never scanned
  *   'recent' – scanned ≤ 15 days ago  → Dashboard + reminder

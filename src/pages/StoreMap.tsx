@@ -7,24 +7,23 @@ import { optimizeStopOrder, distanceBetween, RouteStop } from '@/lib/route-optim
 import { motion } from 'framer-motion';
 import { Navigation, Clock, Route, ChevronRight, Crown, AlertTriangle } from 'lucide-react';
 import { apiService } from '@/lib/api';
+import { getZipCode } from '@/lib/utils';
 
 // User's approximate location (Beverly Hills mock)
 const USER_LOCATION = { lat: 34.0736, lng: -118.4004 };
 const DEFAULT_SEARCH_RADIUS = 10;
 
 function getStoredMapSettings(): { zipCode: string; searchRadius: number } {
+  const zipCode = getZipCode();
   try {
-    const raw = globalThis.localStorage.getItem('smartCartSession');
-    if (!raw) return { zipCode: '', searchRadius: DEFAULT_SEARCH_RADIUS };
-    const parsed = JSON.parse(raw) as { zipCode?: string; searchRadius?: unknown };
-    const parsedRadius = Number(parsed.searchRadius);
-    return {
-      zipCode: parsed.zipCode || '',
-      searchRadius: Number.isFinite(parsedRadius) ? parsedRadius : DEFAULT_SEARCH_RADIUS,
-    };
-  } catch {
-    return { zipCode: '', searchRadius: DEFAULT_SEARCH_RADIUS };
-  }
+    const raw = globalThis.localStorage.getItem('smartCartSession') || globalThis.localStorage.getItem('smartCartUser');
+    if (raw) {
+      const parsed = JSON.parse(raw) as { searchRadius?: unknown };
+      const parsedRadius = Number(parsed.searchRadius);
+      return { zipCode, searchRadius: Number.isFinite(parsedRadius) ? parsedRadius : DEFAULT_SEARCH_RADIUS };
+    }
+  } catch { /* ignore */ }
+  return { zipCode, searchRadius: DEFAULT_SEARCH_RADIUS };
 }
 
 type StoreComparison = {

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiService } from '@/lib/api';
 import { PriceObservation, ShoppingListItem, Store } from '@/types';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { getPreferredStoreName } from '@/lib/utils';
 
 type StoreComparison = { store: Store; totalCost: number; coveredItemCount: number; isComplete: boolean };
 type UnifiedRow = {
@@ -192,23 +193,7 @@ const ComparisonScreen = () => {
   const cheapest = sorted[0];
 
 
-  const preferredStoreName = useMemo(() => {
-    try {
-      const session = globalThis.localStorage.getItem('smartCartSession');
-      if (session) {
-        const parsed = JSON.parse(session);
-        if (parsed?.preferredStore) return String(parsed.preferredStore);
-      }
-      const saved = globalThis.localStorage.getItem('smartCartUser');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed?.preferredStore) return String(parsed.preferredStore);
-      }
-    } catch {
-      // ignore malformed storage
-    }
-    return cheapest?.store.name || '';
-  }, [cheapest?.store.name]);
+  const preferredStoreName = useMemo(() => getPreferredStoreName() || cheapest?.store.name || '', [cheapest?.store.name]);
 
   const preferredStore = useMemo(() => {
     if (!preferredStoreName) return cheapest?.store;
