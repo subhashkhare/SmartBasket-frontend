@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp } from 'lucide-react';
 import { apiService } from '@/lib/api';
-import { getLocalLastScan, getPreferredStoreName } from '@/lib/utils';
+import { inferCityStateFromZip } from '@/lib/ocr';
+import { getLocalLastScan, getPreferredStoreName, getZipCode } from '@/lib/utils';
 
 interface TrendingItem {
   itemName: string;
@@ -86,60 +87,145 @@ const Dashboard = () => {
         const stores = storesResp.data || [];
         const storeMap = new Map(stores.map((s) => [s._id || String(s.id), s.name]));
 
+        // Resolve user's state from their zip code (cached per zip in sessionStorage)
+        const userZip = getZipCode() || '';
+        let userState = '';
+        if (userZip) {
+          try {
+            const cacheKey = `smartCartStateForZip_${userZip}`;
+            const cached = sessionStorage.getItem(cacheKey);
+            if (cached !== null) {
+              userState = cached;
+            } else {
+              const loc = await inferCityStateFromZip(userZip);
+              userState = loc?.state || '';
+              sessionStorage.setItem(cacheKey, userState);
+            }
+          } catch { /* ignore */ }
+        }
+        // stateFilterActive = true means we know the user's state and must restrict to it.
+        // When false (zip lookup failed / no zip), fall through to show all stores.
+        const stateFilterActive = userState !== '';
+        const stateStoreIds = stateFilterActive
+          ? new Set(stores.filter((s) => s.state === userState).map((s) => s._id || String(s.id || '')))
+          : new Set<string>();
+
+        // State is known but no stores in DB carry that state tag → nothing to show.
+        if (stateFilterActive && stateStoreIds.size === 0) {
+          setTrendingItems([]);
+          return;
+        }
+
         // Find the user's preferred store ID
         const preferredStoreName = getPreferredStoreName().toLowerCase();
         const preferredStoreId = preferredStoreName
           ? (stores.find((s) => (s.name || '').toLowerCase().trim() === preferredStoreName)?._id || null)
           : null;
 
-        // Items that MUST be available at the preferred store, sorted by max price
-        // difference (preferred store price − cheapest other store price).
-        // When no preferred store is set, the spread fallback below handles display.
-        const items: TrendingItem[] = preferredStoreId
-          ? prices
-              .map((p): TrendingItem | null => {
-                const allEntries = Object.entries(p.prices || {})
-                  .map(([id, v]) => [id, Number(v)] as [string, number])
-                  .filter(([, v]) => v > 0);
-                if (!allEntries.length) return null;
+        let items: TrendingItem[] = [];
 
-                const preferredEntry = allEntries.find(([id]) => id === preferredStoreId);
-                if (!preferredEntry) return null; // must be at preferred store
+        if (preferredStoreId) {
+          // Items that MUST be available at the preferred store, sorted by max price
+          // difference (preferred store price − cheapest other store price).
+          items = prices
+            .map((p): TrendingItem | null => {
+              const allEntries = Object.entries(p.prices || {})
+                .map(([id, v]) => [id, Number(v)] as [string, number])
+                .filter(([, v]) => v > 0);
+              if (!allEntries.length) return null;
 
-                const otherEntries = allEntries.filter(([id]) => id !== preferredStoreId);
-                if (!otherEntries.length) return null;
+              const preferredEntry = allEntries.find(([id]) => id === preferredStoreId);
+              if (!preferredEntry) return null; // must be at preferred store
 
-                const [cheapestOtherId, cheapestOtherPrice] = otherEntries.reduce(
+              const otherEntries = allEntries.filter(([id]) => {
+                if (id === preferredStoreId) return false;
+                return stateStoreIds.size === 0 || stateStoreIds.has(id);
+              });
+
+              let cheapestOtherId = '';
+              let cheapestOtherPrice = preferredEntry[1];
+              if (otherEntries.length > 0) {
+                [cheapestOtherId, cheapestOtherPrice] = otherEntries.reduce(
                   (min, e) => (e[1] < min[1] ? e : min)
                 );
-                const savings = preferredEntry[1] - cheapestOtherPrice;
+              }
+              const savings = preferredEntry[1] - cheapestOtherPrice;
 
-                return {
-                  itemName: p.itemName || '',
-                  itemId: p.itemId || p._id,
-                  preferredPrice: preferredEntry[1],
-                  cheapestPrice: cheapestOtherPrice,
-                  cheapestStore: p.storeNames?.[cheapestOtherId] || storeMap.get(cheapestOtherId) || '',
-                  savings,
-                  storeCount: allEntries.length,
-                  quantity: 1,
-                };
-              })
-              .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
-              .sort((a, b) => b.savings - a.savings)
-              .slice(0, 5)
-          : [];
+              return {
+                itemName: p.itemName || '',
+                itemId: p.itemId || p._id,
+                preferredPrice: preferredEntry[1],
+                cheapestPrice: cheapestOtherPrice,
+                cheapestStore: p.storeNames?.[cheapestOtherId] || storeMap.get(cheapestOtherId) || '',
+                savings,
+                storeCount: allEntries.length,
+                quantity: 1,
+              };
+            })
+            .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
+            .sort((a, b) => b.savings - a.savings)
+            .slice(0, 5);
+        } else if (preferredStoreName) {
+          // Preferred store name doesn't match any store in the database — fall back to
+          // historical median price vs. the cheapest current price across all stores.
+          // Medians are now per (itemId, state); pick the entry with the most history
+          // (richest data) for each item, favouring state-specific records over the
+          // state='' backfill bucket when both exist.
+          const mediansResp = await apiService.getPriceMedians();
+          const medianMap = new Map<string, number>();
+          for (const m of (mediansResp.data || [])) {
+            const existing = medianMap.get(m.itemId);
+            if (existing === undefined || (m.state && m.state !== '')) {
+              medianMap.set(m.itemId, m.medianPrice);
+            }
+          }
 
-        // Fallback (no preferred store): top 5 by max price spread across catalog
-        if (items.length === 0 && !preferredStoreId) {
-          const spreadItems = prices
+          items = prices
+            .map((p): TrendingItem | null => {
+              const itemId = p.itemId || p._id;
+              const median = itemId ? medianMap.get(itemId) : undefined;
+              if (median === undefined) return null;
+
+              const allEntries = Object.entries(p.prices || {})
+                .map(([id, v]) => [id, Number(v)] as [string, number])
+                .filter(([, v]) => v > 0);
+              if (!allEntries.length) return null;
+
+              const effectiveEntries = stateStoreIds.size > 0
+                ? allEntries.filter(([id]) => stateStoreIds.has(id))
+                : allEntries;
+              if (!effectiveEntries.length) return null;
+
+              const [minId, minPrice] = effectiveEntries.reduce((min, e) => (e[1] < min[1] ? e : min));
+              const diff = median - minPrice;
+
+              return {
+                itemName: p.itemName || '',
+                itemId,
+                preferredPrice: median,
+                cheapestPrice: minPrice,
+                cheapestStore: p.storeNames?.[minId] || storeMap.get(minId) || '',
+                savings: diff,
+                storeCount: effectiveEntries.length,
+                quantity: 1,
+              };
+            })
+            .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
+            .sort((a, b) => b.savings - a.savings)
+            .slice(0, 5);
+        } else {
+          // No preferred store set at all: top 5 by max price spread across catalog
+          items = prices
             .map((p) => {
               const allEntries = Object.entries(p.prices || {})
                 .map(([id, v]) => [id, Number(v)] as [string, number])
                 .filter(([, v]) => v > 0);
-              if (allEntries.length < 2) return null;
-              const maxPrice = Math.max(...allEntries.map(([, v]) => v));
-              const [cheapestId, minPrice] = allEntries.reduce((min, e) => e[1] < min[1] ? e : min);
+              const effectiveEntries = stateStoreIds.size > 0
+                ? allEntries.filter(([id]) => stateStoreIds.has(id))
+                : allEntries;
+              if (effectiveEntries.length < 2) return null;
+              const maxPrice = Math.max(...effectiveEntries.map(([, v]) => v));
+              const [cheapestId, minPrice] = effectiveEntries.reduce((min, e) => e[1] < min[1] ? e : min);
               const spread = maxPrice - minPrice;
               if (spread <= 0) return null;
               return {
@@ -148,14 +234,13 @@ const Dashboard = () => {
                 cheapestPrice: minPrice,
                 cheapestStore: p.storeNames?.[cheapestId] || storeMap.get(cheapestId) || '',
                 savings: spread,
-                storeCount: allEntries.length,
+                storeCount: effectiveEntries.length,
                 quantity: 1,
               };
             })
             .filter((x): x is TrendingItem => x !== null && x.itemName.length > 0)
             .sort((a, b) => b.savings - a.savings)
             .slice(0, 5);
-          items.push(...spreadItems);
         }
 
         setTrendingItems(items);

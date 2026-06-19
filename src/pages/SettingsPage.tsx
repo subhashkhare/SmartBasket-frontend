@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronRight, MapPin, CreditCard, Bell, Shield, CircleHelp, LogOut, Store, KeyRound, Check, AlertCircle } from 'lucide-react';
 import { apiService } from '@/lib/api';
-import { getPreferredStoreName, setPreferredStoreName, getZipCode, setZipCode } from '@/lib/utils';
+import { inferCityStateFromZip } from '@/lib/ocr';
+import { getPreferredStoreName, setPreferredStoreName, getZipCode, setZipCode as persistZipToStorage } from '@/lib/utils';
 
 const DEFAULT_ZIP_CODE = '90210';
 const DEFAULT_SEARCH_RADIUS = 10;
@@ -66,6 +67,10 @@ const SettingsPage = () => {
   const [pinError, setPinError] = useState('');
   const [pinSaveMessage, setPinSaveMessage] = useState('');
 
+  const [zipSaveState, setZipSaveState] = useState<SaveState>('idle');
+  const [zipError, setZipError] = useState('');
+  const [zipLocation, setZipLocation] = useState('');
+
   const [preferredStore, setPreferredStore] = useState(() => getPreferredStoreName());
   const [storeSaveState, setStoreSaveState] = useState<SaveState>('idle');
   const [storeSaveMessage, setStoreSaveMessage] = useState('');
@@ -78,8 +83,7 @@ const SettingsPage = () => {
     globalThis.location.href = '/auth';
   };
 
-  const persistLocationSettings = (nextZipCode: string, nextRadius: number) => {
-    setZipCode(nextZipCode);
+  const persistLocationSettings = (nextRadius: number) => {
     for (const key of ['smartCartSession', 'smartCartUser']) {
       try {
         const raw = globalThis.localStorage.getItem(key);
@@ -89,6 +93,32 @@ const SettingsPage = () => {
         globalThis.localStorage.setItem(key, JSON.stringify(session));
       } catch { /* ignore */ }
     }
+  };
+
+  const handleZipBlur = async () => {
+    if (!/^\d{5}$/.test(zipCode)) return;
+    setZipSaveState('saving');
+    setZipError('');
+    setZipLocation('');
+
+    const loc = await inferCityStateFromZip(zipCode);
+    if (!loc || !loc.state) {
+      setZipSaveState('error');
+      setZipError('Zipcode not found');
+      return;
+    }
+
+    setZipLocation(`${loc.city}, ${loc.state}`);
+    setZipSaveState('saved');
+
+    try {
+      const oldZip = getZipCode();
+      if (oldZip && oldZip !== zipCode) {
+        sessionStorage.removeItem(`smartCartStateForZip_${oldZip}`);
+      }
+    } catch { /* ignore */ }
+    persistZipToStorage(zipCode);
+    setTimeout(() => navigate('/'), 1500);
   };
 
   const handlePinBlur = async () => {
@@ -107,7 +137,7 @@ const SettingsPage = () => {
       setPinSaveState('saved');
       setPinSaveMessage(result.data?.saveMode === 'fallback' ? 'Saved locally' : 'Synced');
       setPin('');
-        setTimeout(() => navigate('/compare'), 1500);
+      setTimeout(() => navigate('/compare'), 1500);
     }
   };
 
@@ -158,17 +188,28 @@ const SettingsPage = () => {
               <p className="text-xs text-muted-foreground">For local prices & tax</p>
             </div>
           </div>
-          <input
-            value={zipCode}
-            onChange={e => {
-              const nextZipCode = e.target.value.replace(/\D/g, '').slice(0, 5);
-              setZipCode(nextZipCode);
-              persistLocationSettings(nextZipCode, priceRadius);
-            }}
-            className="w-20 h-8 rounded-lg bg-secondary text-center text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            maxLength={5}
-          />
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <SaveIndicator state={zipSaveState} errorMsg={zipError} />
+            <input
+              value={zipCode}
+              onChange={e => {
+                setZipCode(e.target.value.replace(/\D/g, '').slice(0, 5));
+                setZipSaveState('idle');
+                setZipError('');
+                setZipLocation('');
+              }}
+              onBlur={() => { void handleZipBlur(); }}
+              className="w-20 h-8 rounded-lg bg-secondary text-center text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              maxLength={5}
+            />
+          </div>
         </div>
+        {zipLocation && (
+          <p className="text-xs text-success pl-9">{zipLocation}</p>
+        )}
+        {zipError && (
+          <p className="text-xs text-destructive pl-9">{zipError}</p>
+        )}
         <div className="flex items-center justify-between">
           <p className="text-sm text-foreground">Search Radius</p>
           <div className="flex items-center gap-2">
@@ -180,7 +221,7 @@ const SettingsPage = () => {
               onChange={e => {
                 const nextRadius = Number(e.target.value);
                 setPriceRadius(nextRadius);
-                persistLocationSettings(zipCode, nextRadius);
+                persistLocationSettings(nextRadius);
               }}
               className="w-24 accent-primary"
             />
@@ -236,7 +277,8 @@ const SettingsPage = () => {
                 setPinSaveMessage('');
               }}
               onBlur={() => { void handlePinBlur(); }}
-              placeholder="••••"
+              placeholder="0000"
+              autoComplete="off"
               maxLength={4}
               className="w-20 h-8 rounded-lg bg-secondary text-center text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 tracking-widest"
             />

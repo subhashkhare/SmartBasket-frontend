@@ -13,6 +13,8 @@ export interface Store {
   name: string;
   address: string;
   zipCode: string;
+  city?: string;
+  state?: string;
   location?: {
     type: string;
     coordinates: [number, number];
@@ -45,6 +47,13 @@ export interface PriceObservation {
   pricePerUnit?: number;
   unitType?: 'oz' | 'lb' | 'fl_oz';
   receiptId?: string;
+}
+
+export interface PriceMedianObservation {
+  itemId: string;
+  itemName: string;
+  state: string;
+  medianPrice: number;
 }
 
 export interface Receipt {

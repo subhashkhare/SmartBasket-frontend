@@ -18,6 +18,8 @@ export interface ParsedReceipt {
   storeName: string;
   storeAddress: string;
   location: string;
+  city?: string;
+  state?: string;
   zipCode?: string;
   phone?: string;
   date: string;
@@ -62,6 +64,8 @@ function parseClaudeResponse(responseText: string): any {
     storeName: '',
     storeAddress: '',
     location: '',
+    city: '',
+    state: '',
     zipCode: '',
     phone: '',
     dateTime: '',
@@ -95,6 +99,8 @@ function parseClaudeResponse(responseText: string): any {
       storeName: parsed.storeName || fallback.storeName,
       storeAddress: parsed.storeAddress || fallback.storeAddress,
       location: parsed.location || fallback.location,
+      city: parsed.city || fallback.city,
+      state: parsed.state || fallback.state,
       zipCode: parsed.zipCode || fallback.zipCode,
       phone: parsed.phone || fallback.phone,
       dateTime: parsed.dateTime || fallback.dateTime,
@@ -211,8 +217,8 @@ export async function extractReceiptWithClaude(
     const mediaType = 'image/jpeg' as const;
 
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
       messages: [
         {
           role: 'user',
@@ -234,6 +240,8 @@ Return strict JSON only, no explanation:
 {
   "storeName": "",
   "storeAddress": "",
+  "city": "",
+  "state": "",
   "zipCode": "",
   "phone": "",
   "dateTime": "",
@@ -286,6 +294,8 @@ Rules:
         storeName: parsedData.storeName || ocrParsed.storeName,
         storeAddress: parsedData.storeAddress || ocrParsed.storeAddress,
         location: parsedData.location || ocrParsed.location,
+        city: parsedData.city || ocrParsed.city || '',
+        state: parsedData.state || ocrParsed.state || '',
         zipCode: parsedData.zipCode || ocrParsed.zipCode,
         phone: parsedData.phone || ocrParsed.phone || '',
         date: parsedData.dateTime || ocrParsed.date,
@@ -300,6 +310,8 @@ Rules:
       storeName: parsedData.storeName || '',
       storeAddress: parsedData.storeAddress || '',
       location: parsedData.location || '',
+      city: parsedData.city || '',
+      state: parsedData.state || '',
       zipCode: parsedData.zipCode,
       phone: parsedData.phone || '',
       date: parsedData.dateTime || '',
@@ -360,7 +372,7 @@ async function convertImageToBase64(image: File | Blob | string): Promise<string
     const url = URL.createObjectURL(blob);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const MAX = 1500;
+      const MAX = 2000;
       let { width, height } = img;
       if (width > MAX || height > MAX) {
         if (width >= height) {
@@ -375,7 +387,7 @@ async function convertImageToBase64(image: File | Blob | string): Promise<string
       canvas.width = width;
       canvas.height = height;
       canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.82).replace(/^data:image\/jpeg;base64,/, ''));
+      resolve(canvas.toDataURL('image/jpeg', 0.92).replace(/^data:image\/jpeg;base64,/, ''));
     };
     img.onerror = reject;
     img.src = url;
@@ -447,6 +459,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   const zipCode = extractZipCode(lines.join(' '));
   const storeAddress = extractAddress(lines);
   const location = extractLocation(lines, storeAddress);
+  const { city, state } = extractCityState(lines);
 
   // Try to find a date (MM/DD/YYYY or MM-DD-YYYY patterns) — leave empty if not found
   let date = '';
@@ -550,6 +563,8 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     storeName,
     storeAddress,
     location,
+    city,
+    state,
     zipCode,
     phone: '',
     date,
@@ -605,6 +620,53 @@ function extractLocation(lines: string[], storeAddress: string): string {
   }
 
   return '';
+}
+
+function extractCityState(lines: string[]): { city: string; state: string } {
+  const stateZipRegex = /\b([A-Za-z\s]+),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)?\b/;
+  for (const line of lines) {
+    const match = line.match(stateZipRegex);
+    if (match) {
+      return { city: match[1].trim(), state: match[2] };
+    }
+  }
+  return { city: '', state: '' };
+}
+
+export async function inferCityStateFromZip(zipCode: string): Promise<{ city: string; state: string } | null> {
+  const trimmed = String(zipCode || '').trim();
+  if (!/^\d{5}$/.test(trimmed)) return null;
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&postalcode=${encodeURIComponent(trimmed)}&countrycodes=us`,
+      { headers: { Accept: 'application/json' } }
+    );
+    if (!response.ok) return null;
+
+    const results = (await response.json()) as Array<{
+      address?: {
+        city?: string;
+        town?: string;
+        village?: string;
+        county?: string;
+        state?: string;
+        'ISO3166-2-lvl4'?: string;
+      };
+    }>;
+
+    const addr = results?.[0]?.address;
+    if (!addr) return null;
+
+    const city = addr.city || addr.town || addr.village || addr.county || '';
+    // Nominatim returns full state name; extract 2-letter code from ISO3166-2 tag (e.g. "US-CA" → "CA")
+    const isoTag = addr['ISO3166-2-lvl4'] || '';
+    const state = isoTag.split('-')[1] || '';
+
+    return city || state ? { city, state } : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function inferZipCodeFromAddress(address: string): Promise<string | undefined> {

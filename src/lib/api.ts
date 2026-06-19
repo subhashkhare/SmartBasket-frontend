@@ -1,4 +1,4 @@
-import { Store, PriceObservation } from '@/types';
+import { Store, PriceObservation, PriceMedianObservation } from '@/types';
 
 const API_BASE_URL = (() => {
   const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim();
@@ -67,6 +67,8 @@ interface StorePayload {
   name: string;
   address: string;
   zipCode: string;
+  city?: string;
+  state?: string;
   lat: number;
   lng: number;
   chainId: string;
@@ -99,6 +101,9 @@ interface ReceiptDocument {
 interface SaveReceiptPayload {
   storeId: string;
   storeName: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
   receiptDate: string | null;
   items: ReceiptItemPayload[];
   subtotal: number;
@@ -820,6 +825,10 @@ class ApiService {
 
   async getPricesByStore(storeId: string): Promise<ApiResponse<PriceObservation[]>> {
     return this.request<PriceObservation[]>(`/prices/store/${storeId}`);
+  }
+
+  async getPriceMedians(): Promise<ApiResponse<PriceMedianObservation[]>> {
+    return this.request<PriceMedianObservation[]>('/prices/medians');
   }
 
   async createPrice(price: Omit<PriceObservation, '_id'>): Promise<ApiResponse<PriceObservation>> {

@@ -5,6 +5,7 @@ import {
   extractReceiptData,
   geocodeAddress,
   inferZipCodeFromAddress,
+  inferCityStateFromZip,
   ParsedReceipt,
   ParsedReceiptItem,
 } from '@/lib/ocr';
@@ -95,6 +96,15 @@ const ScannerView = () => {
   const updateZipCode = (val: string) =>
     setReceipt((r) => r && { ...r, zipCode: val });
 
+  const handleZipBlur = async (zip: string) => {
+    const trimmed = zip.trim();
+    if (!/^\d{5}$/.test(trimmed)) return;
+    const result = await inferCityStateFromZip(trimmed);
+    if (result) {
+      setReceipt((r) => r && { ...r, city: result.city, state: result.state });
+    }
+  };
+
   const updateItemName = (id: string, val: string) =>
     setReceipt((r) =>
       r && { ...r, items: r.items.map((i) => (i.id === id ? { ...i, name: val } : i)) }
@@ -177,6 +187,8 @@ const ScannerView = () => {
       name: storeName,
       address: storeAddress || receipt.location || 'Unknown Address',
       zipCode: zipCode || '00000',
+      city: receipt.city || '',
+      state: receipt.state || '',
       lat: geo?.lat ?? 37.7749,
       lng: geo?.lng ?? -122.4194,
       chainId: buildChainId(storeName),
@@ -220,6 +232,9 @@ const ScannerView = () => {
       const result = await apiService.saveReceipt({
         storeId,
         storeName: (receipt.storeName || 'unknown store').toLowerCase(),
+        city:  receipt.city  || '',
+        state: receipt.state || '',
+        zipCode: receipt.zipCode || '',
         receiptDate,
         items: validItems,
         subtotal: receipt.subtotal || 0,
@@ -361,6 +376,7 @@ const ScannerView = () => {
               <input
                 value={receipt.zipCode || ''}
                 onChange={(e) => updateZipCode(e.target.value)}
+                onBlur={(e) => { void handleZipBlur(e.target.value); }}
                 placeholder="Zip code"
                 className="rounded-lg border border-input bg-background px-3 py-2 text-[0.7rem] text-foreground w-full"
               />

@@ -190,13 +190,14 @@ const ComparisonScreen = () => {
   }, [filteredPrices, stores]);
 
   const sorted = comparisons;
-  const cheapest = sorted[0];
 
+  const preferredStoreName = useMemo(() => getPreferredStoreName(), []);
 
-  const preferredStoreName = useMemo(() => getPreferredStoreName() || cheapest?.store.name || '', [cheapest?.store.name]);
-
+  // Always anchored to the user's actual preferred store — never substituted with
+  // the cheapest store. If it doesn't match any known store, this resolves to
+  // undefined and the column shows the "Preferred Store" label with no prices.
   const preferredStore = useMemo(() => {
-    if (!preferredStoreName) return cheapest?.store;
+    if (!preferredStoreName) return undefined;
     // Exact match
     const exact = stores.find((s) => s.name === preferredStoreName);
     if (exact) return exact;
@@ -210,9 +211,9 @@ const ComparisonScreen = () => {
       return lower.includes(sLower) || sLower.includes(lower);
     });
     if (partial) return partial;
-    // No match in DB — fall back to cheapest store
-    return cheapest?.store;
-  }, [preferredStoreName, stores, cheapest]);
+    // No match in DB
+    return undefined;
+  }, [preferredStoreName, stores]);
 
   const preferredStoreId = preferredStore?._id || String(preferredStore?.id || '');
   const bestSingleStore = useMemo(() => {
