@@ -84,6 +84,7 @@ interface ReceiptPriceItemPayload {
 interface ReceiptItemPayload {
   itemId?: string;
   itemName: string;
+  itemType?: string;
   quantity: number;
   quantityLabel: string;
   unitPrice: number;

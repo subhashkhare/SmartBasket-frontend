@@ -205,9 +205,10 @@ const ScannerView = () => {
     if (!receipt) return;
 
     const validItems = receipt.items
-      .filter((i) => String(i.name || '').trim().length > 0 && i.unitPrice > 0)
+      .filter((i) => String(i.name || '').trim().length > 0 && i.unitPrice > 3)
       .map((i) => ({
         itemName:      String(i.name).trim().toLowerCase(),
+        itemType:      String(i.itemType || '').trim(),
         quantity:      Number(i.quantity) || 1,
         quantityLabel: i.quantityLabel ?? String(i.quantity ?? 1),
         unitPrice:     parseFloat(Number(i.unitPrice).toFixed(2)),
@@ -215,7 +216,7 @@ const ScannerView = () => {
       }));
 
     if (validItems.length === 0) {
-      setError('Add at least one item with a name and price.');
+      setError('Add at least one item with a name and unit price over $3.');
       return;
     }
 

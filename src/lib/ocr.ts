@@ -7,6 +7,7 @@ const CLAUDE_API_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
 export interface ParsedReceiptItem {
   id: string;
   name: string;
+  itemType?: string;
   quantity: number;
   quantityLabel: string;
   unitPrice: number;
@@ -113,6 +114,7 @@ function parseClaudeResponse(responseText: string): any {
               const total = Number(item.totalPrice) || 0;
               return {
                 name: String(item.name).trim(),
+                itemType: String(item.itemType || '').trim(),
                 quantityLabel: item.quantityLabel || String(item.quantity ?? 1),
                 quantity: qty,
                 unitPrice: parseFloat((total / qty).toFixed(2)),
@@ -217,7 +219,7 @@ export async function extractReceiptWithClaude(
     const mediaType = 'image/jpeg' as const;
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 4096,
       messages: [
         {
@@ -249,6 +251,7 @@ Return strict JSON only, no explanation:
   "items": [
     {
       "name": "",
+      "itemType": "",
       "quantityLabel": "1",
       "quantity": 1,
       "unitPrice": 0.00,
@@ -263,6 +266,8 @@ Return strict JSON only, no explanation:
 Rules:
 - ONLY extract what is physically printed on the receipt. Never invent or estimate missing values.
 - items: only actual purchased items. Exclude total lines, tax lines, payment lines, and receipt codes.
+- name: full item name exactly as printed on the receipt.
+- itemType: the generic product category, stripped of brand names AND descriptive variety/color/ripeness modifiers, so the same underlying product groups together regardless of brand or variety (e.g. "Amul Ghee" → itemType "Ghee"; "Haldiram Aloo Bhujia 1kg" → itemType "Aloo Bhujia 1kg"; "Organic Banana" → itemType "Banana"; "Orange Bell Pepper /lb" → itemType "Bell Pepper (LB)"; "Red Delicious Apple" → itemType "Apple"). Keep suffixes that are core to the product identity (e.g. "2%" milk, "1kg"). For per-pound/weighed items, append the unit in parentheses as "(LB)" (uppercase, single space before the parenthesis, no other suffix). If there is no brand or descriptive modifier to strip, use the same value as name.
 - quantityLabel: exactly as printed on the receipt (e.g. "1.43 lb", "400 g", "2"). Use "1" for a plain single-unit item.
 - quantity: numeric value (e.g. 1.43 for "1.43 lb", 2 for "2 items", 1 for a single package).
 - unitPrice: price per unit as printed. If not printed, compute totalPrice / quantity.
@@ -325,6 +330,7 @@ Rules:
           return {
             id: `item-${index + 1}`,
             name: String(item.name).trim(),
+            itemType: String(item.itemType || '').trim(),
             quantityLabel: item.quantityLabel || String(item.quantity ?? 1),
             quantity: qty,
             unitPrice: parseFloat((total / qty).toFixed(2)),

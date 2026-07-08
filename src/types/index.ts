@@ -33,6 +33,7 @@ export interface PriceObservation {
   _id: string;
   itemName: string;
   itemId?: string;
+  itemType?: string;
   prices?: Record<string, number>;
   storeNames?: Record<string, string>;
   userId?: string;
